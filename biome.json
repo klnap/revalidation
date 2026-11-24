@@ -24,6 +24,9 @@
     "rules": {
       "suspicious": {
         "noConfusingVoidType": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
       }
     }
   }
