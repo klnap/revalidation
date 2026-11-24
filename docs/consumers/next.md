@@ -113,9 +113,11 @@ A layer that has no `execute` handler and is not `next` fails the request with `
 ## Authentication and limits
 
 - The `Authorization` header must be `Bearer <secret>`. The comparison is constant-time. Anything else gets `401`.
-- Bodies are limited to 256 KiB by default (`maxBodyBytes`). Larger bodies get `400`.
+- Bodies are limited to 256 KiB by default (`maxBodyBytes`). Larger bodies get `400`. The hardest allowed value is 16 MiB.
 - The handler counts streamed bytes and starts cancellation after the limit; it does not wait for the stream's cancellation promise before returning `400`. The framework owns transport cleanup.
-- Events are limited to 100 items by default (`maxEvents`). A larger event gets `400`. The producer splits its changes into events of at most 100 items.
+- Events are limited to 100 items by default (`maxEvents`). A larger event gets `400`. The hardest allowed value is 1000.
+- `maxEvents` must be at least the producer's chunk size (`maxEventItems` on the HTTP dispatcher, default 100). A larger chunk gets `400`.
+- Out-of-range values (not an integer, below 1, or above the hardest allowed value) throw when the handler is configured, so the app does not start with them.
 
 See [security](../security.md) for what these checks do not protect against.
 

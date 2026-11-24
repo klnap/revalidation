@@ -77,6 +77,7 @@ const resolveDispatcher = (selection: DispatcherSelection): Dispatcher => {
   if (!fallback) return primary
 
   return {
+    maxEventItems: primary.maxEventItems,
     async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
       try {
         const first = await primary.dispatch(input)

@@ -368,3 +368,18 @@ describe('http dispatcher bounds', () => {
     }
   })
 })
+
+describe('http dispatcher chunk size', () => {
+  it('defaults to 100 items per event and exposes it to the producer', () => {
+    expect(http().maxEventItems).toBe(100)
+  })
+
+  it('accepts a chunk size up to 1000', () => {
+    expect(http({ maxEventItems: 1000 }).maxEventItems).toBe(1000)
+  })
+
+  it('rejects a chunk size above 1000 or below 1 at configuration time', () => {
+    expect(() => http({ maxEventItems: 1001 })).toThrow(RangeError)
+    expect(() => http({ maxEventItems: 0 })).toThrow(RangeError)
+  })
+})

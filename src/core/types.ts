@@ -63,6 +63,11 @@ export type DispatchInput = {
 
 export type Dispatcher = {
   dispatch(input: DispatchInput): Promise<DispatchOutcome>
+  /**
+   * Most items the receiving consumer accepts in one event. The producer splits larger change sets
+   * into events of this size. Omitted means the default (100). Must not exceed the consumer's limit.
+   */
+  maxEventItems?: number
 }
 
 /** Alias for dispatcher factory return type. */

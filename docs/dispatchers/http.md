@@ -13,6 +13,7 @@ revalidation({
     retries: 2,
     retryDelayMs: 200,
     allowInsecure: false,
+    maxEventItems: 100,
   }),
 });
 ```
@@ -47,10 +48,15 @@ X-Revalidation-Delivery: <delivery id>:<event index>
 
 Retries: up to `retries` extra attempts (default 2, so three attempts in total). Each retry waits a random time up to double the previous bound, starting from `retryDelayMs`.
 
+## Chunk size
+
+`maxEventItems` (default 100, hardest allowed 1000) is the most items the producer puts in one event. A larger change set is split into several events, each sent as its own request. Keep it at or below the consumer's `maxEvents`.
+
 ## Timeouts and deadline
 
 - `timeoutMs` limits one attempt.
 - `deadlineMs` limits the whole dispatch call: all events, all targets, and all retries. In practice it caps the timeout, because it is usually shorter.
+- A bulk change set becomes several requests. Raise `deadlineMs` when a large publish sends many events, or those events can fail together at the deadline.
 
 When the deadline passes, the dispatch fails even if the request is still open.
 
