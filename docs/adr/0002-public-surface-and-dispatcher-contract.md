@@ -19,7 +19,7 @@ Defined in `package.json` `exports` (do not deep-import `src/`):
 
 The package manifest defines the explicit public export map.
 
-Workspace and published exports point to compiled `dist/` entry points. The `prepack` lifecycle builds those files before packaging.
+Exports point to compiled `dist/` entry points. The `prepack` lifecycle builds those files before packaging.
 
 ## Dispatcher contract
 
@@ -29,7 +29,7 @@ Semantics: `accepted` | `rejected` | `failed` | `unknown` — see `core/types.ts
 
 ## Peer dependencies
 
-`payload`, `next` (optional per layer), `valibot` (required for pipeline + Payload source schema).
+`payload` and `next` are optional peer dependencies. `valibot` is a runtime dependency of the package (pipeline and wire schemas).
 
 ## Runtime
 

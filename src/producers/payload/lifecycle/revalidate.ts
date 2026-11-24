@@ -42,6 +42,7 @@ import {
   formatLogDetail,
   logRevalidateDispatch,
   revalidationLog,
+  revalidationLogError,
   revalidationSubject,
 } from './log.js'
 import { resolveOrderableNeighborChanges } from './orderable-neighbors.js'
@@ -563,12 +564,32 @@ export const runRevalidationHook = async (
   await dispatchRevalidationChanges({ req, changes, logger, dispatcher })
 }
 
+/**
+ * Fail-open: a read error while building the event (for example a failing `findByID`) is logged and
+ * does not reject the Payload save. The affected revalidation is lost; see docs/reliability.md.
+ */
+export const runRevalidationHookFailOpen = async (
+  args: RevalidateArgs,
+  dispatcher: Dispatcher,
+  options: RevalidationHookOptions = {},
+): Promise<void> => {
+  try {
+    await runRevalidationHook(args, dispatcher, options)
+  } catch (error) {
+    revalidationLogError(
+      args.req.payload.logger,
+      error instanceof Error ? error.message : String(error),
+      'build',
+    )
+  }
+}
+
 export const createCollectionRevalidateAfterChange = (
   dispatcher: Dispatcher,
   options: RevalidationHookOptions = {},
 ): CollectionAfterChangeHook => {
   return async (args) => {
-    await runRevalidationHook(args, dispatcher, options)
+    await runRevalidationHookFailOpen(args, dispatcher, options)
     return args.doc
   }
 }
@@ -578,7 +599,7 @@ export const createCollectionRevalidateAfterDelete = (
   options: RevalidationHookOptions = {},
 ): CollectionAfterDeleteHook => {
   return async (args) => {
-    await runRevalidationHook(args, dispatcher, options)
+    await runRevalidationHookFailOpen(args, dispatcher, options)
   }
 }
 
@@ -587,7 +608,7 @@ export const createGlobalRevalidateAfterChange = (
   options: RevalidationHookOptions = {},
 ): GlobalAfterChangeHook => {
   return async (args) => {
-    await runRevalidationHook(args, dispatcher, options)
+    await runRevalidationHookFailOpen(args, dispatcher, options)
     return args.doc
   }
 }

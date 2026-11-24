@@ -4,6 +4,7 @@ export { dispatchRevalidationChanges } from './deferred.js'
 export { postRevalidationChanges } from './dispatch.js'
 export { docsContentEqual, hasLocaleData } from './doc-content.js'
 export { isUnpublishedStatus } from './draft-status.js'
+export { readCollectionIdentity } from './identifiers.js'
 export {
   getRequestLocale,
   isDraftSave,
@@ -17,6 +18,7 @@ export {
   logRevalidateDispatch,
   mediaSubject,
   revalidationLog,
+  revalidationLogError,
   uniqueLocalesFromChanges,
 } from './log.js'
 export { MEDIA_LOCALIZED_KEYS, mediaSharedFieldsEqual } from './media-equality.js'

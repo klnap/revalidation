@@ -95,7 +95,7 @@ export const compileTagTemplate = (template: string): CompiledTagTemplate => {
         continue
       }
       const value = Object.hasOwn(params, part.value) ? params[part.value] : undefined
-      if (value === undefined || value === '') return null
+      if (value === undefined || value === null || value === '') return null
       out += value
     }
     return out

@@ -1,0 +1,78 @@
+# HTTP dispatcher
+
+The HTTP dispatcher delivers events from a producer to a consumer over HTTP. It is one transport. The producer's dispatcher is any object with a `dispatch` method; the HTTP dispatcher is the built-in implementation.
+
+```ts
+import { http } from '@klnap/revalidation/dispatchers/http';
+
+revalidation({
+  target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
+  dispatcher: http({
+    timeoutMs: 15_000,
+    deadlineMs: 5_000,
+    retries: 2,
+    retryDelayMs: 200,
+  }),
+});
+```
+
+The values above are the defaults. `target` can be given to `http()` instead of the plugin; the one on `http()` wins.
+
+## Request
+
+Each event is one request:
+
+```http
+POST /api/revalidate HTTP/1.1
+Authorization: Bearer <secret>
+Content-Type: application/json
+X-Revalidation-Delivery: <delivery id>:<event index>
+
+{"source":"payload","data":[...]}
+```
+
+- The delivery id is the `deduplicationId` of the dispatch call when one is given, otherwise a random UUID per dispatch call. Every target and every retry of one event carries the same id. The producer does not set `deduplicationId`, so each dispatch call gets a new UUID, and each event in it is suffixed with its index.
+- The consumer does not use the header to skip repeats; it is for logs and for custom receivers.
+
+## Responses and failures
+
+| Response | Result |
+| --- | --- |
+| `2xx` | Accepted. |
+| `429`, `5xx` | Retryable. |
+| Transport error, timeout | Retryable. |
+| Other `4xx` | Terminal: `failed`, no retry. |
+| `3xx` | Terminal: `failed`, no retry. Redirects are not followed. |
+
+Retries: up to `retries` extra attempts (default 2, so three attempts in total). Each retry waits a random time up to double the previous bound, starting from `retryDelayMs`.
+
+## Timeouts and deadline
+
+- `timeoutMs` limits one attempt.
+- `deadlineMs` limits the whole dispatch call: all events, all targets, and all retries. In practice it caps the timeout, because it is usually shorter.
+
+When the deadline passes, the dispatch fails even if the request is still open.
+
+## Concurrency
+
+Deliveries run in batches of up to four. A batch waits for its slowest delivery before the next batch starts.
+
+## Transport security
+
+The URL must use HTTPS. HTTP is allowed only when `NODE_ENV` is exactly `development` or `test`.
+
+## Duplicate delivery
+
+A retry after a timeout can reach a consumer that already processed the first attempt. A fallback dispatcher (see below) can also resend the same events. Invalidating a tag twice has the same result as once, so the built-in consumer is not harmed by repeats. Custom consumers must tolerate repeated events.
+
+## Fallback dispatcher
+
+`revalidation({ dispatcher: { default, fallback } })` sends to `default` first. `fallback` is used only when `default` throws or reports `failed` (not for `rejected` or `unknown`), and receives the same events again.
+
+## Outcomes
+
+`http()` reports `accepted` or `failed`. `accepted` means the consumer accepted the event; it does not mean every cache layer was refreshed. See [reliability](../reliability.md).
+
+## Custom dispatchers
+
+A dispatcher is an object with `dispatch({ events, deduplicationId? })`, returning `{ status: 'accepted' | 'rejected' | 'failed' | 'unknown', ... }`. The `Dispatcher` type is exported from `@klnap/revalidation`. The plugin accepts any object of this shape. See [extending](../extending.md).

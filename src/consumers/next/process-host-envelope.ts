@@ -14,7 +14,7 @@ import {
 import type { RevalidationEnvelope } from './host-types.js'
 import { findMatchingRules } from './match-layer-rules.js'
 
-type WireSkipReason = 'schema' | 'empty_cache_key' | 'no_rule'
+type WireSkipReason = 'schema' | 'empty_cache_key' | 'no_rule' | 'missing_param'
 
 const logWireSkip = (
   logger: Logger | undefined,
@@ -112,8 +112,14 @@ export const processHostEnvelope = async (
           layer: layerName,
         })
         const params = sourceDef.params(layerEvent)
-        bucket.tags.push(...collectTagsForRule(rule, runtime.builtTags, params, defaultMode))
-        bucket.paths.push(...collectPathsForRule(rule, runtime.builtPaths, params, defaultMode))
+        const onSkip = (id: string) =>
+          logWireSkip(logger, requestId, 'missing_param', { source: envelope.source, index, id })
+        bucket.tags.push(
+          ...collectTagsForRule(rule, runtime.builtTags, params, defaultMode, onSkip),
+        )
+        bucket.paths.push(
+          ...collectPathsForRule(rule, runtime.builtPaths, params, defaultMode, onSkip),
+        )
       }
     }
 
@@ -220,8 +226,14 @@ export const inspectHostEnvelope = (
 
       for (const rule of matched) {
         const params = sourceDef.params(event)
-        bucket.tags.push(...collectTagsForRule(rule, runtime.builtTags, params, defaultMode))
-        bucket.paths.push(...collectPathsForRule(rule, runtime.builtPaths, params, defaultMode))
+        const onSkip = (id: string) =>
+          logWireSkip(logger, 'inspect', 'missing_param', { source: envelope.source, index, id })
+        bucket.tags.push(
+          ...collectTagsForRule(rule, runtime.builtTags, params, defaultMode, onSkip),
+        )
+        bucket.paths.push(
+          ...collectPathsForRule(rule, runtime.builtPaths, params, defaultMode, onSkip),
+        )
       }
     }
 

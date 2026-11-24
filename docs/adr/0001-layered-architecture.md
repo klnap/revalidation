@@ -18,13 +18,13 @@ Organize `src/` as ports/adapters:
 | `producers/payload` | Payload plugin, lifecycle hooks, media dependents | `core`, `producers/payload` | `next` |
 | `dispatchers/routing` | Target resolution (plugin + factory precedence) | `core` | `payload`, `next` |
 | `dispatchers/http` | Synchronous HTTP delivery | `core`, `dispatchers/routing` | `payload`, `next` |
-| `consumers/next` | Next route handler + cache inspect | `core` | `payload` |
+| `consumers/next` | Next route handler + cache inspect | `core`, `sources/payload` (wire schema only) | `payload` |
 
 Additional rules:
 
 - Producers, dispatchers, and consumers never import each other.
 - Sibling dispatchers never import each other; shared code lives in `routing/` or `core/`.
-- Under `producers/payload`, `lifecycle/` may import `media/`; `media/` may import `lifecycle/helpers.ts` only.
+- Under `producers/payload`, `lifecycle/` may import `media/`. `media/` may import `lifecycle/helpers.ts` (the barrel), `exclude-fields.ts` and `revalidation-custom.ts`; it must not import other `lifecycle/` files. Enforced by `check:boundaries`.
 
 Enforcement: `bun run check:boundaries` (`dependency-cruiser.config.mjs`).
 

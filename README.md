@@ -1,29 +1,31 @@
 # @klnap/revalidation
 
-Event-driven cache revalidation for Next.js. Invalidate cache tags and paths automatically when content changes in Payload CMS, or send events from any other system to the same protected route.
+Event-driven cache revalidation for Next.js. A content change produces an event; the event expires the cache tags and paths that depend on it. Declare each cache tag once and use the same declaration in your cached functions and in your invalidation rules.
 
 ```
-Payload CMS ──▶ HTTP dispatcher ──▶ Next.js route ──▶ revalidateTag / revalidatePath
-(producer)       (transport)         (consumer)
+Payload CMS (producer) ──┐
+                         ├─► dispatcher (HTTP) ─► Next.js route (consumer) ─► revalidateTag / revalidatePath
+Any HTTP client ─────────┘
 ```
+
+Producers emit events, dispatchers deliver them, and the consumer turns them into cache invalidation. Each part can be used on its own: the consumer works without Payload, and the Payload producer is one of several ways to send events.
 
 ## Why
 
-Next.js gives you `revalidateTag` and `revalidatePath`. Connecting them to content changes is up to you: hooks in the CMS, an authenticated endpoint, a mapping from documents to cache tags, and handling for locales and shared media. This package provides those parts, so a content change expires exactly the cache entries that depend on it.
+Cache tags are strings. Without a shared definition they get copied into cached functions, route handlers and invalidation rules, and the copies drift apart. A missed or misspelled tag leaves stale content in the cache with no error.
 
-It separates the three concerns, so you can use only what you need: the Next.js consumer works on its own, the Payload producer adds automatic events, and the dispatcher is the transport between them.
+This package keeps one declaration per tag and generates the strings from it. `tags.page({ locale, slug })` produces the same string in the cached function and in the rule that invalidates it. Declarations are typed, so an unknown tag name or a non-string parameter does not compile. See [cache tags](docs/concepts/cache-tags.md) for what the types do and do not guarantee.
 
 ## Features
 
-- **Payload producer.** Emits events from `afterChange` and `afterDelete` hooks on the collections and globals you opt in.
-- **Media dependency tracking.** Changing or deleting a media file revalidates the documents that use it. See [below](#automatic-media-dependency-tracking).
-- **Locale-aware.** Events carry the locale, and cache tags can include it.
-- **Change detection.** Unchanged documents emit nothing, and you can exclude fields from the comparison.
-- **Declarative cache mapping.** Map events to tags and paths with templates such as `[locale]:page:[slug]`, with type-checked names.
-- **Custom event sources.** Any service that can send an HTTP request can trigger revalidation.
-- **Configurable delivery.** Retries, timeout, deadline and bounded concurrency.
-- **Extra cache layers.** Run your own invalidation, for example for a CDN, next to the Next.js cache.
-- **Authenticated and bounded.** Bearer secret, constant-time comparison, and limits on body size and event count.
+- **Single source of truth for cache tags.** Templates such as `[locale]:page:[slug]` produce tag helpers you export and import anywhere.
+- **Declarative invalidation rules.** Map event keys to tags and paths in one place, next to the declarations.
+- **Typed tag helpers.** Unknown tag names, missing call arguments and non-string parameters are compile-time errors.
+- **Independent components.** Consumer, producer, source, and dispatcher are separate modules with separate exports.
+- **Payload producer.** Hooks on opted-in collections and globals, with change detection, locale and draft handling.
+- **Media dependency tracking.** Changing a shared media file revalidates the documents that use it. See [media dependencies](docs/producers/payload-media-dependencies.md).
+- **Custom sources and cache layers.** Accept events from any system, and invalidate other caches (for example a CDN) next to the Next.js cache.
+- **Authenticated, bounded delivery.** Bearer secret, body and event limits, retries with a deadline, and bounded concurrency.
 
 ## Install
 
@@ -31,28 +33,32 @@ It separates the three concerns, so you can use only what you need: the Next.js 
 bun add @klnap/revalidation
 ```
 
-or
+or `npm install @klnap/revalidation`.
 
-```sh
-npm install @klnap/revalidation
-```
+Requirements:
 
-Requires Node `^22.23.5 || ^24.22.3 || >=26.13.1`. The Next.js consumer needs `next >=16.4.5 <17`; the Payload producer needs `payload >=3.94.1 <4`. Both are optional peers, and the core pipeline and HTTP dispatcher need neither.
+- Node `^22.23.5 || ^24.22.3 || >=26.13.1`
+- `next >=16.4.5 <17` for the Next.js consumer (optional peer)
+- `payload >=3.94.1 <4` for the Payload producer (optional peer)
+
+The core pipeline and the HTTP dispatcher need neither framework. Custom sources need [`valibot`](https://valibot.dev) in your application.
 
 ## Quick start
 
-A Next.js site that caches pages by slug, and a Payload `pages` collection that invalidates them.
+One integration, from declaration to verification. It uses Bun, Next.js 16 with Cache Components, and a Payload `pages` collection with a `slug` field.
 
-**1. Share a secret.** Set the same value on both sides, and point Payload at the route:
+**1. Set the shared secret** in both applications:
 
 ```sh
-# Next.js app and Payload app
-REVALIDATION_SECRET=change-me
-# Payload app only
+# Next.js app (.env.local)
+REVALIDATION_SECRET=replace-with-a-long-random-value
+
+# Payload app (.env)
+REVALIDATION_SECRET=replace-with-a-long-random-value
 REVALIDATION_URL=http://localhost:3000/api/revalidate
 ```
 
-**2. Define tags and rules in Next.js.**
+**2. Declare the tags and the rules once.** Keys in `invalidate` are event keys: the Payload collection or global slug.
 
 ```ts
 // src/revalidation.ts
@@ -60,40 +66,51 @@ import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/ne
 
 export const { tags } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  tags: { page: '[locale]:page:[slug]' },
+  tags: {
+    page: '[locale]:page:[slug]',
+    siteSettings: '[locale]:site-settings',
+  },
   resolve: (event) => event.key ?? invalidKey(),
   invalidate: (cacheTags) => ({
-    pages: [cacheTags.page], // events from the `pages` collection expire this tag
+    pages: [cacheTags.page],
+    'site-settings': [cacheTags.siteSettings],
   }),
 });
 ```
 
-**3. Add the route.** Importing the module registers the configuration before the first request:
+**3. Use the exported helpers in cached functions.** This requires Cache Components (`cacheComponents: true` in `next.config`).
 
 ```ts
-// app/api/revalidate/route.ts
+// src/lib/content.ts
+import { cacheTag } from 'next/cache';
+import { tags } from '@/revalidation';
+
+export async function getPage(locale: string, slug: string) {
+  'use cache';
+  cacheTag(tags.page({ locale, slug }));
+  // Load the page from Payload here.
+}
+
+export async function getSiteSettings(locale: string) {
+  'use cache';
+  cacheTag(tags.siteSettings({ locale }));
+  // Load the settings from Payload here.
+}
+```
+
+**4. Create the Route Handler.** The import registers the declarations in the same module graph as the handler.
+
+```ts
+// src/app/api/revalidate/route.ts
 import '@/revalidation';
 
 export { POST } from '@klnap/revalidation/consumers/next';
 ```
 
-**4. Tag cached data with the same tags.**
+**5. Configure the Payload producer.** Opt in with `custom.revalidation`.
 
 ```ts
-import { cacheTag } from 'next/cache';
-import { tags } from '@/revalidation';
-
-async function getPage(locale: string, slug: string) {
-  'use cache';
-  cacheTag(tags.page({ locale, slug }));
-  // load and return the page
-}
-```
-
-**5. Add the plugin to Payload.**
-
-```ts
-// payload.config.ts
+// payload.config.ts (db, secret and admin options omitted)
 import { http } from '@klnap/revalidation/dispatchers/http';
 import { revalidation } from '@klnap/revalidation/producers/payload';
 import { buildConfig } from 'payload';
@@ -109,6 +126,13 @@ export default buildConfig({
       ],
     },
   ],
+  globals: [
+    {
+      slug: 'site-settings',
+      custom: { revalidation: true },
+      fields: [{ name: 'siteName', type: 'text' }],
+    },
+  ],
   plugins: [
     revalidation({
       target: {
@@ -121,140 +145,52 @@ export default buildConfig({
 });
 ```
 
-**6. Check it.** Edit a page in Payload. The producer sends an event with `key: "pages"`, the page's `slug`, and a `locale` (`en` when localization is off). The route expires `en:page:<slug>`, and the next request for that page reads fresh data.
+**6. Verify.** Open `/api/revalidate` with a GET request to confirm the route exists (it answers `405`). Load a page with `getPage('en', 'about')`, then change its title in Payload and save. Payload sends an event with `key: "pages"`, `locale: "en"` and `slug: "about"`. The consumer expires `en:page:about`, the same string `getPage` tagged, so the next request reads fresh data.
 
-The route accepts POST only and requires `Authorization: Bearer <secret>`.
+Events are delivered after the save, so the expiry arrives shortly afterwards and not inside the save request. See [reliability](docs/reliability.md).
 
-## Revalidation behavior
+## Consumers
 
-Invalidation marks cache entries as outdated. It does not rebuild pages or refresh a page that is already open in a browser; the next request after invalidation gets fresh data.
+The Next.js consumer receives events, matches them to your rules, and calls `revalidateTag` and `revalidatePath`. It does not depend on Payload. Full guide: [docs/consumers/next.md](docs/consumers/next.md).
 
-| `mode` | Behavior |
-| --- | --- |
-| `expire` (default) | The next read of an invalidated tag waits for fresh data. |
-| `stale` | The next read returns the previous data while fresh data loads. |
+## Producers
 
-Set `mode` in `defineRevalidation`, or per rule. Use `paths` to invalidate paths, and `invalidate.layers` with `execute` for other cache layers such as a CDN.
+A producer emits events when content changes. The Payload producer is the built-in one: a plugin that sends events from collection and global hooks. Full guide: [docs/producers/payload.md](docs/producers/payload.md). Media dependency tracking: [docs/producers/payload-media-dependencies.md](docs/producers/payload-media-dependencies.md).
 
-## Payload producer
+Any system that can send an HTTP request with the event envelope can also be a producer. See [sources](docs/sources/custom.md).
 
-`custom.revalidation: true` enables collection `afterChange` and `afterDelete` hooks. Globals support `afterChange` only. Configure details per collection or global:
+## Sources
 
-```ts
-custom: {
-  revalidation: {
-    identifier: 'slug',
-    hooks: ['afterChange', 'afterDelete'],
-    excludeFields: ['updatedAt'],
-  },
-}
-```
+A source defines the shape of an event item (its validation) and how the item maps to a cache key. The built-in source is the Payload wire format, `payloadRevalidationSource()`. A custom source accepts other shapes. Full guide: [docs/sources/custom.md](docs/sources/custom.md).
 
-`identifier` accepts one field path or a list of field paths. Without it, the document slug is used as the route identifier. `enabled: false` opts an item out. Excluded fields are omitted when comparing snapshots; schema-level settings override plugin per-slug settings, which override plugin-wide `excludeFields`.
+## Dispatchers
 
-### Automatic media dependency tracking
+A dispatcher delivers events from a producer to a consumer. The built-in dispatcher is HTTP. A dispatcher is any object with a `dispatch` method that returns an outcome; the Payload plugin accepts one. Full guide: [docs/dispatchers/http.md](docs/dispatchers/http.md).
 
-Updating a shared image should not mean republishing every document that uses it. When a file in your upload collection is updated or deleted, the producer finds the documents that reference it and emits update events for them, so their cache expires like after a normal edit.
+## Architecture and extension
 
-It works from your Payload config, so there is no registry to maintain: add an upload field and it is covered.
+- [Architecture](docs/concepts/architecture.md): responsibilities of each component and what can be used on its own.
+- [Extending revalidation](docs/extending.md): which extension points are public and supported.
 
-- **Opt-in.** Only collections and globals with `custom.revalidation` are searched.
-- **Published content only.** For collections with drafts, only published documents are revalidated. A delete revalidates every dependent, before the media row is removed.
-- **Locale-aware.** Only locales whose media data actually changed are revalidated.
-- **Deduplicated.** A document that references the file through several fields produces one event per locale.
+## Reliability and security
 
-The upload collection is detected automatically (the only upload collection, or the one with slug `media`). Override it, or ignore fields that do not affect your pages, with the `media` option:
-
-```ts
-revalidation({
-  dispatcher: http(),
-  target,
-  media: { collection: mediaCollection, excludeFields: ['updatedAt'] },
-});
-```
-
-Fields that change what is rendered, such as `alt` text, should not be excluded.
-
-| Schema feature | Collections | Globals |
-| --- | --- | --- |
-| `upload` field | Yes | Yes |
-| `relationship` to the media collection | Yes | Yes |
-| Inside groups, rows and named tabs | Yes | Yes |
-| Inside arrays | Yes | No |
-| `hasMany` | Yes | No |
-| Inside blocks | No | No |
-| Relationship to several collections | No | No |
-
-## Custom event sources
-
-The consumer does not need Payload. Describe your own source and send it a request. This example accepts `{ "key": "pricing" }` events from any service:
-
-```ts
-import * as v from 'valibot';
-import { defineRevalidation } from '@klnap/revalidation/consumers/next';
-
-defineRevalidation({
-  secret: process.env.REVALIDATION_SECRET!,
-  tags: { pricing: 'pricing' },
-  sources: {
-    webhook: {
-      schema: v.object({ key: v.string() }),
-      resolve: ({ item }) => (item as { key: string }).key,
-    },
-  },
-  layers: (tags) => ({
-    next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
-  }),
-});
-```
-
-```sh
-curl -X POST https://example.com/api/revalidate \
-  -H "Authorization: Bearer $REVALIDATION_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"source":"webhook","data":[{"key":"pricing"}]}'
-```
-
-Custom sources use [`valibot`](https://valibot.dev) schemas, so install it in your app. An event whose `source` is unknown, whose item fails the schema, or whose key matches no rule is skipped and logged.
-
-## HTTP dispatcher
-
-```ts
-http({
-  timeoutMs: 15_000,
-  deadlineMs: 5_000,
-  retries: 2,
-  retryDelayMs: 200,
-});
-```
-
-Defaults are shown above. The dispatcher retries transport errors, timeouts, HTTP 429, and 5xx responses. Other 4xx responses and redirects are final. It does not follow redirects. HTTPS is required, except HTTP is allowed in development and tests. A deadline applies to the whole dispatch call; up to four deliveries run concurrently.
-
-
-## Reliability
-
-- Delivery is best-effort. Failures are logged and never fail the Payload save.
-- There is no persistent queue or automatic recovery. A process exit can lose a pending dispatch, and an unreachable consumer means missed invalidations.
-- Retries and network conditions can deliver an event more than once. Invalidation is idempotent, so this is safe for the built-in consumer; make custom consumers idempotent too.
-- A `2xx` response means the consumer accepted the event, not that every cache layer is fresh.
-
-## Security
-
-The HTTP dispatcher sends a shared Bearer secret. Use HTTPS and keep the secret server-only. The consumer compares the authorization value in constant time and bounds request body size and event count. The protocol does not provide request signatures, replay protection, or rate limiting. Anyone with the secret can request invalidation for keys allowed by your consumer config.
+- [Reliability](docs/reliability.md): what an accepted event does and does not guarantee.
+- [Security](docs/security.md): authentication, limits, and what is not protected.
+- [Troubleshooting](docs/troubleshooting.md): common responses and log messages.
 
 ## Public exports
 
 | Subpath | Contents |
 | --- | --- |
-| `@klnap/revalidation` | Framework-independent pipeline, types, errors, and target helpers |
-| `@klnap/revalidation/consumers/next` | Consumer: `defineRevalidation`, `createRevalidationHandler`, `createCache`, `POST` |
-| `@klnap/revalidation/producers/payload` | Producer: `revalidation()` and Payload helpers |
-| `@klnap/revalidation/sources/payload` | Payload wire schema and `payloadRevalidationSource()` |
+| `@klnap/revalidation` | Framework-independent pipeline, error classes, dispatcher and target helpers |
+| `@klnap/revalidation/consumers/next` | `defineRevalidation`, `defineRevalidationTags`, `createCache`, `createRevalidationHandler`, `POST`, `invalidKey` |
+| `@klnap/revalidation/producers/payload` | `revalidation()` plugin, orderable hooks, exclude-field helpers |
+| `@klnap/revalidation/sources/payload` | Payload wire item schema and `payloadRevalidationSource()` |
+| `@klnap/revalidation/dispatchers` | `http`, target helpers |
 | `@klnap/revalidation/dispatchers/http` | `http()` and `HttpDispatcherConfig` |
-| `@klnap/revalidation/dispatchers` | Dispatcher and target helpers |
 
-Use only these subpaths; source-file deep imports are not public API.
+Only these subpaths are public. Files under `src/` are not.
 
-## License
+## Changelog and license
 
-[MIT](LICENSE)
+See [CHANGELOG.md](CHANGELOG.md). Licensed under the [MIT License](LICENSE).

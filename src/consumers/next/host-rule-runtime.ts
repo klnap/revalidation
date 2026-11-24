@@ -47,12 +47,15 @@ export const collectTagsForRule = (
   builtTags: BuiltTags<Record<string, TagTemplate>>,
   params: TagParamsBag,
   defaultMode: CacheMode,
+  onSkip?: (id: string) => void,
 ): ReturnType<typeof resolveTagEntries> => {
   const entries: ReturnType<typeof resolveTagEntries> = []
   for (const tagId of rule.tagIds) {
     const tagDef = builtTags[tagId as keyof BuiltTags]
     if (!tagDef) continue
-    entries.push(...resolveTagEntries(tagDef, params, defaultMode, rule.mode))
+    entries.push(
+      ...resolveTagEntries(tagDef, params, defaultMode, rule.mode, () => onSkip?.(tagId)),
+    )
   }
   return entries
 }
@@ -62,12 +65,15 @@ export const collectPathsForRule = (
   builtPaths: BuiltPaths<Record<string, PathTemplate>>,
   params: TagParamsBag,
   defaultMode: CacheMode,
+  onSkip?: (id: string) => void,
 ): ReturnType<typeof resolvePathEntries> => {
   const entries: ReturnType<typeof resolvePathEntries> = []
   for (const pathId of rule.pathIds) {
     const pathDef = builtPaths[pathId as keyof BuiltPaths]
     if (!pathDef) continue
-    entries.push(...resolvePathEntries(pathDef, params, defaultMode, rule.mode))
+    entries.push(
+      ...resolvePathEntries(pathDef, params, defaultMode, rule.mode, () => onSkip?.(pathId)),
+    )
   }
   return entries
 }

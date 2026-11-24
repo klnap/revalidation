@@ -85,6 +85,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "2.6.8",
     "@payloadcms/db-sqlite": "3.94.1",
+    "@swc/core": "^1",
     "@types/bun": "^1.4.4",
     "dependency-cruiser": "^18.8.0",
     "knip": "^6.48.0",
