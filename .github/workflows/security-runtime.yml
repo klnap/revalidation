@@ -2,31 +2,23 @@ name: Sandboxed security regressions
 
 on:
   workflow_call:
-    inputs:
-      source_sha:
-        required: true
-        type: string
 
 permissions:
   contents: read
+cache-mode: none
 
 jobs:
   regressions:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Require a full source commit SHA
-        env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-        run: |
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
+          no-cache: true
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Pull the pinned Bun test runtime
         run: docker pull oven/bun:1.4.4

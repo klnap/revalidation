@@ -16,7 +16,7 @@ bun run lint && bun run typecheck && bun run knip && bun run check:boundaries &&
 
 `scripts/consumer-smoke.sh <tarball>` installs the built artifact in a clean project, exercises the Payload producer, and verifies real Next.js production cache invalidation, including a chunked oversized-body response. CI runs it against the current pinned integration versions and the minimum Next.js version. The Node compatibility job covers each declared Node line.
 
-CI runs focused request and Payload media regressions in a Docker container with verified memory, CPU, process, network, and read-only source limits. `workflow_dispatch` requires a full commit SHA and runs the non-publishing qualification checks against that revision. Fork pull requests scan locally without SARIF upload; trusted pushes upload results with `security-events: write`.
+CI runs focused request and Payload media regressions in a Docker container with verified memory, CPU, process, network, and read-only source limits. For `workflow_dispatch`, select the candidate branch or tag and supply its full commit SHA; the SHA must match the selected revision. Fork pull requests scan locally without SARIF upload; trusted pushes upload results with `security-events: write`.
 
 ## Commits
 
