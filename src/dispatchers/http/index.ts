@@ -1,4 +1,9 @@
 import { aggregateDispatchOutcomes, createDispatchError } from '../../core/dispatch-outcome.js'
+import {
+  assertLimit,
+  DEFAULT_MAX_EVENT_ITEMS,
+  MAX_EVENT_ITEMS_CEILING,
+} from '../../core/event-limits.js'
 import type { CacheEvent, Dispatcher, DispatchInput, DispatchOutcome } from '../../core/index.js'
 import { resolveRevalidationTargets } from '../routing/resolve-target.js'
 import type { RevalidationTarget, TargetConfig } from '../routing/target-config.js'
@@ -21,6 +26,11 @@ export type HttpDispatcherConfig = {
    * this only on a network you trust. Default false.
    */
   allowInsecure?: boolean
+  /**
+   * Most items per event sent to this target. Default 100, hard maximum 1000. Must not exceed the
+   * consumer's `maxEvents`; the consumer rejects larger events with 400.
+   */
+  maxEventItems?: number
 }
 
 const missingTargetOutcome = (): DispatchOutcome => ({
@@ -249,6 +259,11 @@ const postEvent = async (
 }
 
 export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
+  const maxEventItems = assertLimit(
+    'maxEventItems',
+    config.maxEventItems ?? DEFAULT_MAX_EVENT_ITEMS,
+    MAX_EVENT_ITEMS_CEILING,
+  )
   const factoryTarget = config.target
   const timeoutMs = config.timeoutMs ?? 15_000
   const deadlineMs = config.deadlineMs ?? 5_000
@@ -257,6 +272,7 @@ export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
   const allowInsecure = config.allowInsecure ?? false
 
   return {
+    maxEventItems,
     async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
       const targets = resolveRevalidationTargets(factoryTarget)
       if (!targets.length) return missingTargetOutcome()

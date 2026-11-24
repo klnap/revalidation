@@ -207,3 +207,21 @@ describe('createCache body size', () => {
     expect(accepted.status).toBe(200)
   })
 })
+
+describe('createCache limits', () => {
+  it('accepts the hard ceilings', () => {
+    expect(() => handlerFor({ maxEvents: 1000, maxBodyBytes: 16 * 1024 * 1024 })).not.toThrow()
+  })
+
+  it('rejects an event limit above the ceiling at configuration time', () => {
+    expect(() => handlerFor({ maxEvents: 1001 })).toThrow(RangeError)
+  })
+
+  it('rejects a body limit above the ceiling at configuration time', () => {
+    expect(() => handlerFor({ maxBodyBytes: 16 * 1024 * 1024 + 1 })).toThrow(RangeError)
+  })
+
+  it('rejects a non-positive body limit', () => {
+    expect(() => handlerFor({ maxBodyBytes: 0 })).toThrow(RangeError)
+  })
+})

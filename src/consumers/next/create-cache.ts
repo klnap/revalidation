@@ -1,5 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { DEFAULT_MAX_EVENT_ITEMS } from '../../core/event-limits.js'
+import {
+  assertLimit,
+  DEFAULT_MAX_BODY_BYTES,
+  DEFAULT_MAX_EVENT_ITEMS,
+  MAX_BODY_BYTES_CEILING,
+  MAX_EVENT_ITEMS_CEILING,
+} from '../../core/event-limits.js'
 import {
   CacheConfigurationError,
   CacheExecutionError,
@@ -102,8 +108,16 @@ const readRequestBody = async (request: Request, maxBodyBytes: number): Promise<
 
 export const createCache = (config: NextRevalidationHandlerConfig) => {
   const mode = config.mode ?? 'expire'
-  const maxBodyBytes = config.maxBodyBytes ?? 256 * 1024
-  const maxEvents = config.maxEvents ?? DEFAULT_MAX_EVENT_ITEMS
+  const maxBodyBytes = assertLimit(
+    'maxBodyBytes',
+    config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    MAX_BODY_BYTES_CEILING,
+  )
+  const maxEvents = assertLimit(
+    'maxEvents',
+    config.maxEvents ?? DEFAULT_MAX_EVENT_ITEMS,
+    MAX_EVENT_ITEMS_CEILING,
+  )
 
   const pipelineConfig: PipelineConfig = {
     mode,
