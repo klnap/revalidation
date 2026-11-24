@@ -1,6 +1,11 @@
 import type { Payload } from 'payload'
 
-import { hasLocaleData, type RevalidationChange, toTypedLocale } from '../lifecycle/helpers.js'
+import {
+  hasLocaleData,
+  type RevalidationChange,
+  readCollectionIdentity,
+  toTypedLocale,
+} from '../lifecycle/helpers.js'
 import {
   type CollectionMediaRef,
   discoverMediaReferences,
@@ -70,12 +75,18 @@ export const resolveCollectionDependents = async ({
           continue
         }
 
+        const collection = payload.collections?.[ref.slug]?.config
+        const identity = collection
+          ? readCollectionIdentity({ collection, locale, doc: localeDoc })
+          : {}
         changes.push({
           type: 'collection',
           slug: ref.slug,
           operation,
           locale,
           doc: localeDoc,
+          ...(identity.routeSlug !== undefined ? { routeSlug: identity.routeSlug } : {}),
+          ...(identity.identifiers ? { identifiers: identity.identifiers } : {}),
         })
       }
 

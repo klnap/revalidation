@@ -1,5 +1,9 @@
 import type { CollectionConfig } from 'payload'
-import type { RevalidationIdentifierField } from '../revalidation-custom.js'
+import {
+  normalizeCollectionRevalidation,
+  type RevalidationIdentifierField,
+  readRevalidationCustom,
+} from '../revalidation-custom.js'
 import { isIdentifierPathLocalized, readIdentifierAtPath } from './identifier-field.js'
 
 /** Identifier values of one document in one locale, keyed by configured field path. */
@@ -51,3 +55,27 @@ export const definedIdentifiers = (values: IdentifierValues): Record<string, str
   Object.fromEntries(
     Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined),
   )
+
+/**
+ * Route segment and identifier values for one document in one locale, as a collection's event
+ * reports them. Used for both direct saves and media-triggered parent events.
+ */
+export const readCollectionIdentity = ({
+  collection,
+  locale,
+  doc,
+}: {
+  collection: CollectionConfig
+  locale: string
+  doc: Record<string, unknown>
+}): { routeSlug?: string; identifiers?: Record<string, string> } => {
+  const meta = readRevalidationCustom(collection.custom)
+  const paths = meta ? normalizeCollectionRevalidation(meta).identifiers : []
+  if (paths.length === 0) {
+    const slug = typeof doc.slug === 'string' && doc.slug.length > 0 ? doc.slug : undefined
+    return slug ? { routeSlug: slug } : {}
+  }
+  const values = readIdentifierValues({ collection, paths, doc, locale })
+  const identifiers = definedIdentifiers(values)
+  return { routeSlug: values[paths[0] as string], identifiers }
+}
