@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-24
+
+### Added
+
+- `allowInsecure` option on the HTTP dispatcher (default `false`). When `true`, plain `http://` targets are accepted on any host; the bearer secret is then sent unencrypted.
+
+### Changed
+
+- The HTTP dispatcher accepts plain `http://` targets on loopback hosts (`localhost`, `127.0.0.1`, `[::1]`) in every environment, so a local production build can reach a local receiver. Other plain `http://` targets are still refused outside `development` and `test`.
+
 ## [0.2.0] - 2026-11-24
 
 ### Breaking

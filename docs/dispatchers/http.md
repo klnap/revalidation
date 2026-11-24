@@ -12,6 +12,7 @@ revalidation({
     deadlineMs: 5_000,
     retries: 2,
     retryDelayMs: 200,
+    allowInsecure: false,
   }),
 });
 ```
@@ -59,7 +60,11 @@ Deliveries run in batches of up to four. A batch waits for its slowest delivery 
 
 ## Transport security
 
-The URL must use HTTPS. HTTP is allowed only when `NODE_ENV` is exactly `development` or `test`.
+The URL must use HTTPS. Plain `http://` is allowed in these cases:
+
+- `NODE_ENV` is exactly `development` or `test`.
+- The host is loopback: `localhost`, `127.0.0.1`, or `[::1]`. Such traffic never leaves the machine.
+- `allowInsecure: true` is set. Any host then accepts plain http, and the bearer secret travels unencrypted. Use it only on a network you trust.
 
 ## Duplicate delivery
 
