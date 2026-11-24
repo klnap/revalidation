@@ -1,0 +1,147 @@
+import { describe, expect, it } from 'bun:test'
+
+import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
+import { inspectHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
+import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
+
+const payloadWire = {
+  resolve: (event: { collection?: string; global?: string }) =>
+    event.collection ?? event.global ?? '',
+}
+
+describe('low-effort invalidates', () => {
+  const manual = () =>
+    compileHostRevalidation({
+      secret: 's',
+      tags: {
+        project: '[locale]:project:[slug]',
+        workPage: '[locale]:work-page',
+      },
+      sources: {
+        payload: {
+          schema: payloadRevalidationItemSchema,
+          resolve: ({ item }) => {
+            const d = item as { key: string }
+            return d.key
+          },
+        },
+      },
+      layers: (t, _p) => ({
+        next: [
+          {
+            key: { payload: 'projects' },
+            invalidates: [t.project, t.workPage],
+          },
+        ],
+      }),
+    })
+
+  const lowEffortFlat = () =>
+    compileHostRevalidation({
+      secret: 's',
+      ...payloadWire,
+      tags: {
+        project: '[locale]:project:[slug]',
+        workPage: '[locale]:work-page',
+      },
+      invalidate: (tag) => ({
+        projects: [tag.project, tag.workPage],
+      }),
+    })
+
+  it('flat invalidates expands to next layer', () => {
+    const envelope = {
+      source: 'payload',
+      data: {
+        operation: 'update',
+        locale: 'en',
+        key: 'projects',
+        collection: 'projects',
+        slug: 'tower',
+      },
+    }
+
+    const manualResult = inspectHostEnvelope(manual().runtime, envelope, 'expire', 100)
+    const lowResult = inspectHostEnvelope(lowEffortFlat().runtime, envelope, 'expire', 100)
+
+    expect(lowResult.cacheKeys).toEqual(manualResult.cacheKeys)
+    expect(lowResult.layers.next?.tags.map((t) => t.value).sort()).toEqual(
+      manualResult.layers.next?.tags.map((t) => t.value).sort(),
+    )
+  })
+
+  it('invalidates.layers supports custom layer', () => {
+    const { runtime } = compileHostRevalidation({
+      secret: 's',
+      ...payloadWire,
+      tags: { homePage: '[locale]:home' },
+      paths: { homePath: '/[locale]' },
+      invalidate: {
+        layers: {
+          next: (tag, _p) => ({ 'home-page': [tag.homePage] }),
+          cdn: (_tag, p) => ({ 'home-page': { paths: [p!.homePath] } }),
+        },
+      },
+    })
+
+    const result = inspectHostEnvelope(
+      runtime,
+      {
+        source: 'payload',
+        data: { operation: 'update', locale: 'en', key: 'home-page', global: 'home-page' },
+      },
+      'expire',
+      100,
+    )
+
+    expect(result.layers.next?.tags.map((t) => t.value)).toEqual(['en:home'])
+    expect(result.layers.cdn?.paths.map((p) => p.value)).toEqual(['/en'])
+  })
+
+  it('rejects mixing invalidates with sources', () => {
+    expect(() =>
+      compileHostRevalidation({
+        secret: 's',
+        tags: { homePage: '[locale]:home' },
+        sources: {
+          payload: {
+            schema: payloadRevalidationItemSchema,
+            resolve: () => 'home-page',
+          },
+        },
+        invalidate: (tag) => ({ 'home-page': [tag.homePage] }),
+        resolve: () => 'home-page',
+      }),
+    ).toThrow(/invalidate.*or sources/)
+  })
+
+  it('requires resolve', () => {
+    expect(() =>
+      compileHostRevalidation({
+        secret: 's',
+        tags: { homePage: '[locale]:home' },
+        invalidate: (tag: { homePage: (locale: string) => string }) => ({
+          'home-page': [tag.homePage],
+        }),
+      } as unknown as import('../../../../src/consumers/next/host-types').DefineRevalidationInput),
+    ).toThrow(/resolve/)
+  })
+
+  it('rejects top-level layers in low-effort', () => {
+    expect(() =>
+      compileHostRevalidation({
+        secret: 's',
+        tags: { homePage: '[locale]:home' },
+        layers: {
+          next: (tag: { homePage: (locale: string) => string }) => ({
+            'home-page': [tag.homePage],
+          }),
+        },
+        invalidate: (tag: { homePage: (locale: string) => string }) => ({
+          'home-page': [tag.homePage],
+        }),
+        resolve: () => 'home-page',
+      } as unknown as import('../../../../src/consumers/next/host-types').DefineRevalidationInput),
+    ).toThrow(/invalidate only/)
+  })
+})

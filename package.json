@@ -1,0 +1,102 @@
+{
+  "name": "@klnap/revalidation",
+  "version": "0.1.0",
+  "description": "Event-driven cache revalidation: a Payload CMS producer, pluggable dispatchers, and a Next.js consumer.",
+  "keywords": [
+    "payload",
+    "payloadcms",
+    "payload-plugin",
+    "nextjs",
+    "revalidation",
+    "cache",
+    "revalidatetag",
+    "cache-invalidation"
+  ],
+  "homepage": "https://github.com/klnap/revalidation#readme",
+  "bugs": {
+    "url": "https://github.com/klnap/revalidation/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/klnap/revalidation.git"
+  },
+  "license": "MIT",
+  "author": "klnap",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./sources/payload": {
+      "types": "./dist/sources/payload/index.d.ts",
+      "default": "./dist/sources/payload/index.js"
+    },
+    "./producers/payload": {
+      "types": "./dist/producers/payload/index.d.ts",
+      "default": "./dist/producers/payload/index.js"
+    },
+    "./consumers/next": {
+      "types": "./dist/consumers/next/index.d.ts",
+      "default": "./dist/consumers/next/index.js"
+    },
+    "./dispatchers": {
+      "types": "./dist/dispatchers/index.d.ts",
+      "default": "./dist/dispatchers/index.js"
+    },
+    "./dispatchers/http": {
+      "types": "./dist/dispatchers/http/index.d.ts",
+      "default": "./dist/dispatchers/http/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "bun run build && tsc -p tsconfig.json && tsc -p tsconfig.types.json",
+    "test": "bun run build && bun test",
+    "lint": "biome check .",
+    "knip": "knip",
+    "check:package": "publint --strict && attw --pack . --profile esm-only",
+    "prepack": "bun run build",
+    "check:boundaries": "depcruise --config dependency-cruiser.config.mjs --output-type err-long src"
+  },
+  "peerDependencies": {
+    "next": ">=16.4.5 <17",
+    "payload": ">=3.94.1 <4"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    },
+    "payload": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "valibot": "^1.4.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "2.6.8",
+    "@payloadcms/db-sqlite": "3.94.1",
+    "@types/bun": "^1.4.4",
+    "dependency-cruiser": "^18.8.0",
+    "knip": "^6.48.0",
+    "next": "16.4.6",
+    "payload": "3.94.1",
+    "publint": "^0.3.25",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": "^22.23.5 || ^24.22.3 || >=26.13.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
