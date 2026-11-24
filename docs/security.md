@@ -4,7 +4,7 @@
 
 The producer and the consumer share one secret. The dispatcher sends it as `Authorization: Bearer <secret>` on every request, and the consumer compares it in constant time (both values are hashed before comparison). Requests without the correct token get `401` and do nothing.
 
-- Serve the consumer and send events over HTTPS. The HTTP dispatcher refuses plain `http://` URLs unless `NODE_ENV` is `development` or `test`, or the host is loopback (`localhost`, `127.0.0.1`, `[::1]`).
+- Serve the consumer and send events over HTTPS. The HTTP dispatcher refuses plain `http://` URLs unless `NODE_ENV` is `development` or `test`, or the host is loopback (`localhost`, `127.0.0.1`, `[::1]`). `allowInsecure: true` lifts the restriction for every host and sends the secret unencrypted; it is an explicit opt-in.
 - Keep the secret in server-side environment variables. Do not put it in client bundles.
 - The consumer accepts one secret per process. To rotate, update both applications and deploy them together.
 - Error messages from the dispatcher do not include the secret.

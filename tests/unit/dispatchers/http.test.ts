@@ -323,6 +323,13 @@ describe('http dispatcher bounds', () => {
       }).dispatch(event)
       expect(refused.status).toBe('failed')
       expect(fetchMock).toHaveBeenCalledTimes(3)
+
+      const allowed = await http({
+        target: { url: 'http://frontend.example/api/revalidate', secret: 's' },
+        allowInsecure: true,
+      }).dispatch(event)
+      expect(allowed.status).toBe('accepted')
+      expect(fetchMock).toHaveBeenCalledTimes(4)
     } finally {
       env.NODE_ENV = previous
     }

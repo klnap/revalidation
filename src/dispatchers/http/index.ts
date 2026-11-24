@@ -16,6 +16,11 @@ export type HttpDispatcherConfig = {
   retries?: number
   /** Base delay before the first retry; each retry waits a random time up to double the previous bound. Default 200 ms. */
   retryDelayMs?: number
+  /**
+   * Allow plain `http://` targets on any host. The bearer secret then travels unencrypted, so use
+   * this only on a network you trust. Default false.
+   */
+  allowInsecure?: boolean
 }
 
 const missingTargetOutcome = (): DispatchOutcome => ({
@@ -35,16 +40,17 @@ type PostOptions = {
   retries: number
   retryDelayMs: number
   deliveryId: string
+  allowInsecure: boolean
 }
 
 /** Hosts that only this machine can reach. Plain http to them never leaves the host. */
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /**
- * https everywhere. Plain http is allowed in development and test, and to loopback hosts in any
- * environment, so a local production build can reach a local receiver. Other http targets are refused.
+ * https everywhere. Plain http is allowed in development and test, to loopback hosts in any
+ * environment, and to any host when `allowInsecure` is set. Other http targets are refused.
  */
-const isAllowedUrl = (url: string): boolean => {
+const isAllowedUrl = (url: string, allowInsecure: boolean): boolean => {
   let parsed: URL
   try {
     parsed = new URL(url)
@@ -53,6 +59,7 @@ const isAllowedUrl = (url: string): boolean => {
   }
   if (parsed.protocol === 'https:') return true
   if (parsed.protocol !== 'http:') return false
+  if (allowInsecure) return true
   if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') return true
   return LOOPBACK_HOSTS.has(parsed.hostname)
 }
@@ -117,7 +124,7 @@ const attemptPost = async (
   if (options.deadline.aborted) {
     return deadlineFailure(options.deadlineMs)
   }
-  if (!isAllowedUrl(target.url)) {
+  if (!isAllowedUrl(target.url, options.allowInsecure)) {
     return {
       retryable: false,
       outcome: {
@@ -247,6 +254,7 @@ export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
   const deadlineMs = config.deadlineMs ?? 5_000
   const retries = config.retries ?? 2
   const retryDelayMs = config.retryDelayMs ?? 200
+  const allowInsecure = config.allowInsecure ?? false
 
   return {
     async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -274,6 +282,7 @@ export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
                 deadlineMs,
                 retries,
                 retryDelayMs,
+                allowInsecure,
                 deliveryId: `${baseDeliveryId}:${deliveryIndex}`,
               }),
             )
