@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-24
+
+### Added
+
+- `maxEventItems` option on the HTTP dispatcher (default 100, hardest allowed 1000). The producer splits change sets into events of this size, so a larger value lets one event carry more items.
+- Consumer limits validated at configuration time against hard ceilings: `maxBodyBytes` up to 16 MiB and `maxEvents` up to 1000. Out-of-range values throw at startup. Defaults are unchanged.
+
 ## [0.2.1] - 2026-11-24
 
 ### Added
