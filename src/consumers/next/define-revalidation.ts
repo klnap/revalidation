@@ -21,6 +21,7 @@ export type DefineRevalidationTagsInput<
     : never
 
 let registered: NextRevalidationHandlerConfig | null = null
+let registeredInput: unknown = null
 let registeredTags: BuiltTags<Record<string, TagTemplate>> | null = null
 let registeredPaths: BuiltPaths<Record<string, PathTemplate>> | null = null
 
@@ -38,8 +39,8 @@ export type DefinedRevalidation<
  * still requires `defineRevalidation` with the real secret, read at request time.
  */
 export function defineRevalidationTags<
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
+  const TTags extends Record<string, TagTemplate>,
+  const TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
   TSource extends string = string,
 >(
   input: DefineRevalidationTagsInput<TTags, TPaths, TSource> & { tags: TTags },
@@ -56,8 +57,8 @@ export function defineRevalidationTags<
 }
 
 export function defineRevalidation<
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
+  const TTags extends Record<string, TagTemplate>,
+  const TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
   TSource extends string = string,
 >(
   input: DefineRevalidationInput<TTags, TPaths, TSource> & { tags: TTags },
@@ -76,6 +77,9 @@ export function defineRevalidation<
       throw new Error('defineRevalidation: already called in this process with a different secret')
     }
     if (process.env.NODE_ENV === 'production') {
+      if (registeredInput !== input) {
+        throw new Error('defineRevalidation: already called in production with a different config')
+      }
       return {
         tags: registeredTags as BuiltTags<TTags>,
         paths: registeredPaths as BuiltPaths<TPaths>,
@@ -84,6 +88,7 @@ export function defineRevalidation<
   }
 
   registered = config
+  registeredInput = input
   registeredTags = tags as BuiltTags<Record<string, TagTemplate>>
   registeredPaths = paths as BuiltPaths<Record<string, PathTemplate>>
   return { tags, paths }
@@ -96,16 +101,10 @@ export function getDefinedRevalidation(): NextRevalidationHandlerConfig {
   return registered
 }
 
-export function getRevalidation(): DefinedRevalidation {
-  if (!registeredTags || !registeredPaths) {
-    throw new Error('defineRevalidation must be called before getRevalidation')
-  }
-  return { tags: registeredTags, paths: registeredPaths }
-}
-
 /** Test helper — clears module registry. */
 export function resetDefinedRevalidation(): void {
   registered = null
+  registeredInput = null
   registeredTags = null
   registeredPaths = null
 }

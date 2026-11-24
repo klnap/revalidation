@@ -3,6 +3,7 @@ import { mediaSharedFieldsEqual } from '../lifecycle/helpers.ts'
 import { getAtPath, mediaIdsEqual, resolveMediaId } from './media-references.ts'
 import { resolveMediaAffectedLocales } from './resolve-media-affected-locales.ts'
 import { resolveMediaDependentChanges } from './resolve-media-dependents.ts'
+import { createRevalidateMediaDependentsBeforeDelete } from './revalidate-media-dependents.ts'
 
 describe('media-references helpers', () => {
   it('resolves media ids from numbers, strings, and objects', () => {
@@ -273,6 +274,25 @@ const testConfig = {
 }
 
 describe('resolveMediaDependentChanges', () => {
+  it('threads the hook request through collection and global reads', async () => {
+    const req = { context: { transaction: 'current' } }
+    const find = mock((_args: { req?: unknown }) =>
+      Promise.resolve({ docs: [], hasNextPage: false }),
+    )
+    const findGlobal = mock((_args: { req?: unknown }) => Promise.resolve({}))
+
+    await resolveMediaDependentChanges({
+      mediaId: 99,
+      locales: ['en'],
+      mediaSlug: 'media',
+      req: req as never,
+      payload: { find, findGlobal, config: testConfig } as never,
+    })
+
+    expect(find.mock.calls[0]?.[0].req).toBe(req)
+    expect(findGlobal.mock.calls[0]?.[0].req).toBe(req)
+  })
+
   it('builds parent changes for matching collections and globals', async () => {
     const find = mock(() =>
       Promise.resolve({
@@ -300,10 +320,11 @@ describe('resolveMediaDependentChanges', () => {
       return Promise.resolve({ id: 1, socialMedia: { image: { asset: 1 } } })
     })
 
-    const changes = await resolveMediaDependentChanges({
+    const { changes } = await resolveMediaDependentChanges({
       mediaId: 99,
       locales: ['en'],
       mediaSlug: 'media',
+      req: {} as never,
       payload: { find, findGlobal, config: testConfig } as never,
     })
 
@@ -335,14 +356,15 @@ describe('resolveMediaDependentChanges', () => {
   })
 
   it('returns empty when no locales', async () => {
-    const changes = await resolveMediaDependentChanges({
+    const resolution = await resolveMediaDependentChanges({
       mediaId: 1,
       locales: [],
       mediaSlug: 'media',
+      req: {} as never,
       payload: { find: mock(), findGlobal: mock(), config: testConfig } as never,
     })
 
-    expect(changes).toEqual([])
+    expect(resolution).toEqual({ complete: true, changes: [], failures: [] })
   })
 
   it('includes published collection dependents for image', async () => {
@@ -357,10 +379,11 @@ describe('resolveMediaDependentChanges', () => {
       return Promise.resolve({ docs: [] })
     })
 
-    const changes = await resolveMediaDependentChanges({
+    const { changes } = await resolveMediaDependentChanges({
       mediaId: heroMediaId,
       locales: ['pl'],
       mediaSlug: 'media',
+      req: {} as never,
       payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
@@ -386,6 +409,7 @@ describe('resolveMediaDependentChanges', () => {
       mediaId: 77,
       locales: ['en'],
       mediaSlug: 'media',
+      req: {} as never,
       payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
@@ -405,14 +429,110 @@ describe('resolveMediaDependentChanges', () => {
       },
     )
 
-    const changes = await resolveMediaDependentChanges({
+    const { changes } = await resolveMediaDependentChanges({
       mediaId: 5,
       locales: ['pl'],
       mediaSlug: 'media',
+      req: {} as never,
       payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
     expect(changes).toHaveLength(1)
     expect(changes[0]).toMatchObject({ type: 'collection', slug: 'projects', locale: 'pl' })
+  })
+
+  it('keeps successful dependents when another media reference query fails', async () => {
+    const doc = { id: 'gallery-parent', slug: 'gallery-parent', _status: 'published' }
+    const error = mock(() => {})
+    const find = mock(({ where }: { where?: Record<string, unknown> }) => {
+      if ('image' in (where ?? {})) return Promise.reject(new Error('image query failed'))
+      if ('gallery' in (where ?? {})) return Promise.resolve({ docs: [doc] })
+      return Promise.resolve({ docs: [] })
+    })
+
+    const resolution = await resolveMediaDependentChanges({
+      mediaId: 5,
+      locales: ['en'],
+      mediaSlug: 'media',
+      req: {} as never,
+      payload: {
+        find,
+        findGlobal: mock(() => Promise.resolve({})),
+        config: testConfig,
+        logger: { error },
+      } as never,
+    })
+
+    expect(resolution.changes.map((change) => change.doc.id)).toContain('gallery-parent')
+    expect(resolution.complete).toBe(false)
+    expect(resolution.failures).toHaveLength(1)
+    expect(resolution.failures[0]).toMatchObject({ refSlug: 'projects', locale: 'en' })
+    expect(error).not.toHaveBeenCalled()
+  })
+})
+
+describe('media dependency resolution failures', () => {
+  const createRequest = (find: (args: { where?: Record<string, unknown> }) => Promise<unknown>) => {
+    const errors = mock(() => {})
+    const infos = mock(() => {})
+    const deferred: Array<{ changes: Array<{ doc: { id: string | number } }> }> = []
+    const payload = {
+      config: testConfig,
+      collections: {},
+      find,
+      findGlobal: mock(() => Promise.resolve({})),
+      logger: { error: errors, info: infos },
+    }
+    const req = {
+      payload,
+      locale: 'en',
+      query: {},
+      context: { __revalidationDeferred: deferred },
+    }
+    return { deferred, errors, infos, payload, req }
+  }
+
+  it('logs incomplete resolution and defers successfully resolved targets', async () => {
+    const parent = { id: 'resolved-parent', slug: 'resolved', _status: 'published' }
+    const { deferred, errors, infos, req } = createRequest(({ where }) => {
+      if ('image' in (where ?? {})) return Promise.reject(new Error('image query failed'))
+      if ('gallery' in (where ?? {})) return Promise.resolve({ docs: [parent] })
+      return Promise.resolve({ docs: [] })
+    })
+    const dispatcher = { dispatch: mock(() => Promise.resolve({ status: 'accepted' as const })) }
+
+    await createRevalidateMediaDependentsBeforeDelete(dispatcher as never)({
+      id: 5,
+      context: {},
+      req: req as never,
+      collection: { slug: 'media' } as never,
+    })
+
+    expect(errors).toHaveBeenCalledWith(
+      expect.stringContaining('media dependency resolution incomplete'),
+    )
+    expect(infos).toHaveBeenCalledWith(expect.stringContaining('dispatch'))
+    expect(deferred.flatMap((entry) => entry.changes.map((change) => change.doc.id))).toContain(
+      'resolved-parent',
+    )
+  })
+
+  it('does not report no references when every dependency query fails', async () => {
+    const { deferred, errors, infos, req } = createRequest(() =>
+      Promise.reject(new Error('dependency query failed')),
+    )
+
+    await createRevalidateMediaDependentsBeforeDelete({
+      dispatch: mock(() => Promise.resolve({ status: 'accepted' as const })),
+    } as never)({
+      id: 5,
+      context: {},
+      req: req as never,
+      collection: { slug: 'media' } as never,
+    })
+
+    expect(errors).toHaveBeenCalled()
+    expect(infos).not.toHaveBeenCalledWith(expect.stringContaining('no references'))
+    expect(deferred).toEqual([])
   })
 })

@@ -1,0 +1,77 @@
+name: Sandboxed security regressions
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require a full source commit SHA
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Pull the pinned Bun test runtime
+        run: docker pull oven/bun:1.4.4
+      - name: Verify enforced container limits and run focused regressions
+        run: |
+          set -o pipefail
+          docker run --rm \
+            --network none \
+            --memory 1073741824 \
+            --memory-swap 1073741824 \
+            --cpus 1 \
+            --pids-limit 128 \
+            --read-only \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=536870912 \
+            --volume "$GITHUB_WORKSPACE:/work:ro" \
+            --workdir /work \
+            --env HOME=/tmp/home \
+            --env TMPDIR=/tmp \
+            --entrypoint /bin/sh \
+            oven/bun:1.4.4 -euc '
+              mkdir -p /tmp/home
+              test "$(bun --version)" = "1.4.4"
+              test "$(cat /sys/fs/cgroup/memory.max)" = "1073741824"
+              test "$(cat /sys/fs/cgroup/pids.max)" = "128"
+              set -- $(cat /sys/fs/cgroup/cpu.max)
+              test "$1" -gt 0
+              test "$1" -le "$2"
+              test -r /work/src/consumers/next/create-cache.ts
+              if touch /work/.security-runtime-write-probe 2>/dev/null; then
+                rm -f /work/.security-runtime-write-probe
+                echo "source mount is writable"
+                exit 1
+              fi
+              echo "Sandbox admission: PASS (1 GiB memory, 1 CPU, 128 processes, no network, read-only source)"
+              timeout 8m env -i PATH="$PATH" HOME=/tmp/home TMPDIR=/tmp CI=1 bun test \
+                tests/unit/consumers/next/create-cache-request.test.ts \
+                src/producers/payload/media/resolve-media-dependents.test.ts \
+                src/producers/payload/media/revalidate-media-dependents.test.ts \
+                src/producers/payload/media/media-identity.test.ts \
+                tests/integration/media-dependents.int.test.ts
+            ' 2>&1 | tee "$RUNNER_TEMP/security-runtime.log"
+      - name: Upload sandbox admission and regression evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandboxed-security-regressions
+          path: ${{ runner.temp }}/security-runtime.log
+          if-no-files-found: error

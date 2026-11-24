@@ -1,20 +1,34 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { DispatchInput } from '../../src/core/index.js'
+import { resolveMediaDependentChanges } from '../../src/producers/payload/media/resolve-media-dependents.js'
 import { revalidation } from '../../src/producers/payload/plugin.js'
 import { createTestPayload, type TestPayloadHandle } from './helpers/test-payload.js'
 
 const dispatches: DispatchInput[] = []
 const dispatcher = {
   async dispatch(input: DispatchInput) {
-    dispatches.push(input)
+    const isPaginationFixture = input.events.some(
+      (event) =>
+        Array.isArray(event.data) &&
+        event.data.some(
+          (item) =>
+            typeof item === 'object' &&
+            item !== null &&
+            'slug' in item &&
+            typeof item.slug === 'string' &&
+            item.slug.startsWith('pagination-'),
+        ),
+    )
+    if (!isPaginationFixture) dispatches.push(input)
     return { status: 'accepted' as const }
   },
 }
 let handle!: TestPayloadHandle
+let mediaUploadDir = ''
 
 const dependentSlugs = (from: number) =>
   dispatches
@@ -34,11 +48,12 @@ const waitFor = async (from: number, slug: string) => {
 
 describe('media-dependent revalidation (SQLite integration)', () => {
   beforeAll(async () => {
+    mediaUploadDir = mkdtempSync(join(tmpdir(), 'revalidation-media-'))
     handle = await createTestPayload(
       [
         {
           slug: 'media',
-          upload: { staticDir: mkdtempSync(join(tmpdir(), 'revalidation-media-')) },
+          upload: { staticDir: mediaUploadDir },
           fields: [{ name: 'alt', type: 'text' }],
         },
         {
@@ -56,6 +71,7 @@ describe('media-dependent revalidation (SQLite integration)', () => {
 
   afterAll(async () => {
     await handle?.destroy()
+    rmSync(mediaUploadDir, { recursive: true, force: true })
   })
 
   it('revalidates a post that references a media file when the file changes', async () => {
@@ -78,5 +94,45 @@ describe('media-dependent revalidation (SQLite integration)', () => {
     await payload.update({ collection: 'media', id: media.id, data: { alt: 'two' } })
     await waitFor(from, 'with-hero')
     expect(dependentSlugs(from)).not.toContain('no-hero')
+  })
+
+  it('resolves all media dependents across the real Payload pagination boundary', async () => {
+    const { payload } = handle
+    const media = await payload.create({
+      collection: 'media',
+      data: { alt: 'cursor test' },
+      file: {
+        data: Buffer.from('cursor'),
+        mimetype: 'text/plain',
+        name: 'cursor.txt',
+        size: 6,
+      },
+    })
+    const created = []
+    for (let index = 0; index < 501; index += 1) {
+      created.push(
+        await payload.create({
+          collection: 'posts',
+          data: { slug: `pagination-${index}`, hero: media.id },
+        }),
+      )
+    }
+
+    const { changes, complete, failures } = await resolveMediaDependentChanges({
+      mediaId: media.id,
+      mediaSlug: 'media',
+      payload,
+      req: { payload } as never,
+      locales: ['en'],
+      operation: 'update',
+    })
+
+    expect(complete).toBe(true)
+    expect(failures).toEqual([])
+    expect(changes.map((change) => change.doc.id)).toEqual(created.map((doc) => doc.id))
+    expect(new Set(changes.map((change) => change.doc.id)).size).toBe(501)
+    expect(changes.map((change) => change.doc.slug)).toEqual(
+      Array.from({ length: 501 }, (_, index) => `pagination-${index}`),
+    )
   })
 })

@@ -78,7 +78,11 @@ const readRequestBody = async (request: Request, maxBodyBytes: number): Promise<
       if (done) break
       size += value.byteLength
       if (size > maxBodyBytes) {
-        await reader.cancel().catch(() => {})
+        try {
+          void reader.cancel().catch(() => {})
+        } catch {
+          // Cancellation must not delay or replace the size-limit response.
+        }
         throw new CacheSourceError('Request body too large')
       }
       chunks.push(value)

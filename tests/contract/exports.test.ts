@@ -1,21 +1,57 @@
 import { describe, expect, it } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 
 const publicExports = {
-  '.': ['createPipeline'],
+  '.': [
+    'CacheConfigurationError',
+    'CacheExecutionError',
+    'CacheRequestError',
+    'CacheResolutionError',
+    'CacheSchemaError',
+    'CacheSourceError',
+    'InvalidKeyError',
+    'aggregateDispatchOutcomes',
+    'createDispatchError',
+    'createPipeline',
+    'normalizeTargets',
+    'toHttpStatus',
+  ],
   './sources/payload': ['payloadRevalidationItemSchema', 'payloadRevalidationSource'],
-  './producers/payload': ['revalidation'],
-  './consumers/next': ['createCache', 'defineRevalidation', 'POST'],
-  './dispatchers': ['http'],
+  './producers/payload': [
+    'RevalidationExcludeFieldsError',
+    'normalizeExcludeFields',
+    'readRevalidationExcludeFields',
+    'resolveExcludeFields',
+    'revalidation',
+    'revalidationOrderableHooks',
+  ],
+  './consumers/next': [
+    'InvalidKeyError',
+    'POST',
+    'createCache',
+    'createRevalidationHandler',
+    'defineRevalidation',
+    'defineRevalidationTags',
+    'invalidKey',
+  ],
+  './dispatchers': ['http', 'normalizeTargets', 'resolveRevalidationTargets'],
   './dispatchers/http': ['http'],
 } as const
 
 describe('package export subpaths', () => {
+  it('keeps the public package paths explicit', async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { exports: Record<string, unknown> }
+    expect(Object.keys(manifest.exports).sort()).toEqual(Object.keys(publicExports).sort())
+  })
+
   for (const [subpath, names] of Object.entries(publicExports)) {
     it(`resolves ${subpath}`, async () => {
       const specifier =
         subpath === '.' ? '@klnap/revalidation' : `@klnap/revalidation${subpath.slice(1)}`
       const mod = await import(specifier)
-      for (const name of names) expect(mod).toHaveProperty(name)
+      expect(Object.keys(mod).sort()).toEqual([...names].sort())
     })
   }
 
@@ -23,5 +59,10 @@ describe('package export subpaths', () => {
     const mod = await import('@klnap/revalidation/dispatchers')
     expect(mod).toHaveProperty('http')
     expect(mod).not.toHaveProperty('payloadJobs')
+  })
+
+  it('does not expose the consumer test registry reset', async () => {
+    const mod = await import('@klnap/revalidation/consumers/next')
+    expect(mod).not.toHaveProperty('resetDefinedRevalidation')
   })
 })

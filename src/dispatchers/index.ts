@@ -3,6 +3,5 @@ export {
   normalizeTargets,
   type RevalidationTarget,
   resolveRevalidationTargets,
-  setRevalidationPluginTarget,
   type TargetConfig,
 } from './routing/index.js'

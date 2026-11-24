@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
-  defineRevalidation,
   getDefinedRevalidation,
-  invalidKey,
   resetDefinedRevalidation,
-} from '../../../../src/consumers/next/index'
+} from '../../../../src/consumers/next/define-revalidation'
+import { defineRevalidation, invalidKey } from '../../../../src/consumers/next/index'
 import { resolveTagEntries } from '../../../../src/consumers/next/resolve-tag-params'
 import { POST } from '../../../../src/consumers/next/route/post'
 

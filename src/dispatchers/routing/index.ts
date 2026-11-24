@@ -1,7 +1,4 @@
-export {
-  resolveRevalidationTargets,
-  setRevalidationPluginTarget,
-} from './resolve-target.js'
+export { resolveRevalidationTargets } from './resolve-target.js'
 export {
   normalizeTargets,
   type RevalidationTarget,

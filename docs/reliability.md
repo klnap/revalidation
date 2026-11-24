@@ -32,7 +32,7 @@ Set a cache lifetime (`cacheLife` in Next.js) on cached data, so stale entries a
 
 | Where | Behavior |
 | --- | --- |
-| Read error while building an event (for example a failing database read) | Logged; the save succeeds; that revalidation is lost. |
+| Read error while building an event | Logged; the save succeeds. Media resolution dispatches completed dependents and logs failed scopes; other producer read failures can lose the whole revalidation. |
 | Dispatch failure after retries, or a non-accepted outcome | Logged; the save succeeds; the event is lost. |
 | Item fails validation, or has no matching rule | Skipped and logged (when a logger is configured); the request succeeds. |
 | A tag or path has a missing parameter | Skipped and logged as `missing_param`; the rest of the item still runs. |

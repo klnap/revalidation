@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking
+
+- Stop exporting test-only reset functions and internal registry, lifecycle, and Next execution helpers. Use the documented producer and consumer APIs.
+
+### Fixed
+
+- Tag and path references must come from the active configuration, including low-effort declarations.
+- Media dependency traversal uses stable ID cursors and preserves completed results when another query fails.
+- Media dependency reads retain the current Payload hook request and transaction context.
+- Oversized streamed requests return without waiting for stream cancellation to settle.
+- Payload version-history lookup now scans beyond the first page.
+- Include linked documentation in the packed package.
+
+### Changed
+
+- Cache tag helpers infer required parameters from literal templates.
+- Production rejects a second, different `defineRevalidation` configuration instead of reusing stale declarations.
+
 ## [0.1.1] - 2026-11-24
 
 ### Fixed

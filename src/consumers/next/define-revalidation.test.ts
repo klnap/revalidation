@@ -35,6 +35,17 @@ describe('defineRevalidation', () => {
     expect(getDefinedRevalidation().host).toBeDefined()
   })
 
+  it('builds static tags without parameters', () => {
+    const { tags } = defineRevalidation({
+      secret: 'shared-secret',
+      tags: { navigation: 'navigation' },
+      resolve: () => 'navigation',
+      invalidate: (cacheTags) => ({ navigation: [cacheTags.navigation] }),
+    })
+
+    expect(tags.navigation()).toBe('navigation')
+  })
+
   it('allows repeat defineRevalidation with same secret in dev', () => {
     defineRevalidation(baseHost)
     defineRevalidation(baseHost)
@@ -46,6 +57,27 @@ describe('defineRevalidation', () => {
     expect(() => defineRevalidation({ ...baseHost, secret: 'other-secret' })).toThrow(
       /different secret/,
     )
+  })
+
+  it('rejects a different production config with the same secret', () => {
+    const env = process.env as Record<string, string | undefined>
+    const previousNodeEnv = env.NODE_ENV
+    env.NODE_ENV = 'production'
+    try {
+      defineRevalidation(baseHost)
+      expect(() => defineRevalidation(baseHost)).not.toThrow()
+      expect(() =>
+        defineRevalidation({
+          secret: 'shared-secret',
+          tags: { newsPage: 'news-page' },
+          resolve: () => 'news',
+          invalidate: (cacheTags) => ({ pages: [cacheTags.newsPage] }),
+        }),
+      ).toThrow('defineRevalidation: already called in production with a different config')
+    } finally {
+      if (previousNodeEnv === undefined) delete env.NODE_ENV
+      else env.NODE_ENV = previousNodeEnv
+    }
   })
 })
 

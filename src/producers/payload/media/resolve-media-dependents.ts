@@ -1,4 +1,4 @@
-import type { Payload } from 'payload'
+import type { Payload, PayloadRequest } from 'payload'
 
 import {
   hasLocaleData,
@@ -19,8 +19,21 @@ type ResolveArgs = {
   mediaId: number | string
   mediaSlug: string
   payload: Payload
+  req: PayloadRequest
   locales: string[]
   operation?: RevalidationChange['operation']
+}
+
+export type MediaDependencyFailure = {
+  refSlug: string
+  locale?: string
+  error: unknown
+}
+
+export type MediaDependencyResolution = {
+  complete: boolean
+  changes: RevalidationChange[]
+  failures: MediaDependencyFailure[]
 }
 
 const DEPENDENT_PAGE_SIZE = 500
@@ -40,107 +53,135 @@ export const resolveCollectionDependents = async ({
   ref,
   mediaId,
   payload,
+  req,
   locales,
   operation,
 }: {
   ref: CollectionMediaRef
   mediaId: number | string
   payload: Payload
+  req: PayloadRequest
   locales: string[]
   operation: RevalidationChange['operation']
-}): Promise<RevalidationChange[]> => {
+}): Promise<MediaDependencyResolution> => {
   const changes: RevalidationChange[] = []
+  const failures: MediaDependencyFailure[] = []
 
   for (const locale of locales) {
-    // Every page is read: a fixed page cap would silently drop dependents from invalidation.
-    let page = 1
-    for (;;) {
-      const result = await payload.find({
-        collection: ref.slug,
-        where: mediaIdWhere(ref, mediaId),
-        locale: toTypedLocale(locale),
-        fallbackLocale: false,
-        depth: 0,
-        draft: false,
-        overrideAccess: true,
-        limit: DEPENDENT_PAGE_SIZE,
-        page,
-        pagination: true,
-      })
+    try {
+      // Every page is read: a fixed page cap would silently drop dependents from invalidation.
+      let cursor: string | number | undefined
+      for (;;) {
+        const dependencyWhere = mediaIdWhere(ref, mediaId)
+        const result = await payload.find({
+          collection: ref.slug,
+          where:
+            cursor === undefined
+              ? dependencyWhere
+              : { and: [dependencyWhere, { id: { greater_than: cursor } }] },
+          locale: toTypedLocale(locale),
+          fallbackLocale: false,
+          depth: 0,
+          draft: false,
+          overrideAccess: true,
+          limit: DEPENDENT_PAGE_SIZE,
+          page: 1,
+          pagination: true,
+          sort: 'id',
+          req,
+        })
 
-      for (const doc of result.docs) {
-        const localeDoc = doc as Record<string, unknown>
-        if (!hasLocaleData(localeDoc)) continue
-        if (ref.hasDrafts && operation !== 'delete' && localeDoc._status !== 'published') {
-          continue
+        for (const doc of result.docs) {
+          const localeDoc = doc as Record<string, unknown>
+          if (!hasLocaleData(localeDoc)) continue
+          if (ref.hasDrafts && operation !== 'delete' && localeDoc._status !== 'published') {
+            continue
+          }
+
+          const collection = payload.collections?.[ref.slug]?.config
+          const identity = collection
+            ? readCollectionIdentity({ collection, locale, doc: localeDoc })
+            : {}
+          changes.push({
+            type: 'collection',
+            slug: ref.slug,
+            operation,
+            locale,
+            doc: localeDoc,
+            ...(identity.routeSlug !== undefined ? { routeSlug: identity.routeSlug } : {}),
+            ...(identity.identifiers ? { identifiers: identity.identifiers } : {}),
+          })
         }
 
-        const collection = payload.collections?.[ref.slug]?.config
-        const identity = collection
-          ? readCollectionIdentity({ collection, locale, doc: localeDoc })
-          : {}
-        changes.push({
-          type: 'collection',
-          slug: ref.slug,
-          operation,
-          locale,
-          doc: localeDoc,
-          ...(identity.routeSlug !== undefined ? { routeSlug: identity.routeSlug } : {}),
-          ...(identity.identifiers ? { identifiers: identity.identifiers } : {}),
-        })
+        if (!result.hasNextPage) break
+        const lastId = result.docs.at(-1)?.id
+        if (
+          (typeof lastId !== 'string' && typeof lastId !== 'number') ||
+          (cursor !== undefined && (typeof lastId !== typeof cursor || lastId <= cursor))
+        ) {
+          throw new Error(`Payload dependency pagination did not advance for ${ref.slug}`)
+        }
+        cursor = lastId
       }
-
-      if (!result.hasNextPage) break
-      page += 1
+    } catch (error) {
+      failures.push({ refSlug: ref.slug, locale, error })
     }
   }
 
-  return changes
+  return { complete: failures.length === 0, changes, failures }
 }
 
 const resolveGlobalDependents = async ({
   ref,
   mediaId,
   payload,
+  req,
   locales,
   operation,
 }: {
   ref: GlobalMediaRef
   mediaId: number | string
   payload: Payload
+  req: PayloadRequest
   locales: string[]
   operation: RevalidationChange['operation']
-}): Promise<RevalidationChange[]> => {
+}): Promise<MediaDependencyResolution> => {
   const changes: RevalidationChange[] = []
+  const failures: MediaDependencyFailure[] = []
 
   for (const locale of locales) {
-    const globalDoc = (await payload.findGlobal({
-      slug: ref.slug,
-      locale: toTypedLocale(locale),
-      fallbackLocale: false,
-      depth: 0,
-      draft: false,
-      overrideAccess: true,
-    })) as Record<string, unknown>
+    try {
+      const globalDoc = (await payload.findGlobal({
+        slug: ref.slug,
+        locale: toTypedLocale(locale),
+        fallbackLocale: false,
+        depth: 0,
+        draft: false,
+        overrideAccess: true,
+        req,
+      })) as Record<string, unknown>
 
-    const fieldValue = getAtPath(globalDoc, ref.path)
-    const fieldMediaId = resolveMediaId(fieldValue)
-    if (fieldMediaId === null || !mediaIdsEqual(fieldMediaId, mediaId)) {
-      continue
+      const fieldValue = getAtPath(globalDoc, ref.path)
+      const fieldMediaId = resolveMediaId(fieldValue)
+      if (fieldMediaId === null || !mediaIdsEqual(fieldMediaId, mediaId)) {
+        continue
+      }
+
+      if (!hasLocaleData(globalDoc)) continue
+
+      changes.push({
+        type: 'global',
+        slug: ref.slug,
+        operation,
+        locale,
+        doc: globalDoc,
+      })
+    } catch (error) {
+      failures.push({ refSlug: ref.slug, locale, error })
     }
-
-    if (!hasLocaleData(globalDoc)) continue
-
-    changes.push({
-      type: 'global',
-      slug: ref.slug,
-      operation,
-      locale,
-      doc: globalDoc,
-    })
   }
 
-  return changes
+  return { complete: failures.length === 0, changes, failures }
 }
 
 /**
@@ -151,18 +192,21 @@ export const resolveMediaDependentChanges = async ({
   mediaId,
   mediaSlug,
   payload,
+  req,
   locales,
   operation = 'update',
-}: ResolveArgs): Promise<RevalidationChange[]> => {
-  if (!locales.length) return []
+}: ResolveArgs): Promise<MediaDependencyResolution> => {
+  if (!locales.length) return { complete: true, changes: [], failures: [] }
 
-  const batches = await Promise.all(
-    discoverMediaReferences(payload.config, mediaSlug).map((ref) => {
+  const refs = discoverMediaReferences(payload.config, mediaSlug)
+  const settledBatches = await Promise.allSettled(
+    refs.map((ref) => {
       if (ref.type === 'collection') {
         return resolveCollectionDependents({
           ref,
           mediaId,
           payload,
+          req,
           locales,
           operation,
         })
@@ -171,6 +215,7 @@ export const resolveMediaDependentChanges = async ({
         ref,
         mediaId,
         payload,
+        req,
         locales,
         operation,
       })
@@ -179,9 +224,18 @@ export const resolveMediaDependentChanges = async ({
 
   const seen = new Set<string>()
   const changes: RevalidationChange[] = []
+  const failures: MediaDependencyFailure[] = []
 
-  for (const batch of batches) {
-    for (const change of batch) {
+  for (const [index, result] of settledBatches.entries()) {
+    if (result.status === 'rejected') {
+      const ref = refs[index]
+      failures.push({ refSlug: ref?.slug ?? mediaSlug, error: result.reason })
+      continue
+    }
+
+    const batch = result.value
+    failures.push(...batch.failures)
+    for (const change of batch.changes) {
       const key = changeKey(change)
       if (seen.has(key)) continue
       seen.add(key)
@@ -189,5 +243,5 @@ export const resolveMediaDependentChanges = async ({
     }
   }
 
-  return changes
+  return { complete: failures.length === 0, changes, failures }
 }

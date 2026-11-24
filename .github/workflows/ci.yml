@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full commit SHA to qualify
+        required: true
+        type: string
 
 permissions: {}
 
@@ -13,41 +19,165 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
+      - name: Validate requested source revision
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.3
           package-manager-cache: false
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run knip
       - run: bun run check:boundaries
-      - run: bun test
+      - name: Run tests and retain test output
+        run: bun test 2>&1 | tee "$RUNNER_TEMP/bun-test.log"
       - run: bun run build
       - run: bun run check:package
-      - name: Pack and smoke-test the tarball in a clean consumer project
+      - name: Rebuild and compare the packed artifact
         run: |
-          npm pack --silent
-          scripts/consumer-smoke.sh klnap-revalidation-*.tgz
+          scripts/pack-reproducible.sh release
+      - name: Smoke-test the tarball in a clean consumer project
+        run: |
+          scripts/consumer-smoke.sh release/klnap-revalidation-*.tgz
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bun-test-output
+          path: ${{ runner.temp }}/bun-test.log
+          if-no-files-found: error
+
+  minimum-framework-compatibility:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: npm pack --silent
+      - name: Test the minimum supported Next.js cache runtime
+        env:
+          NEXT_VERSION: 16.4.5
+        run: scripts/consumer-smoke.sh klnap-revalidation-*.tgz
+
+  node-compatibility:
+    needs: verify
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22.23.5', '24.22.3', '26.13.1']
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: npm pack --silent
+      - run: scripts/node-compat-smoke.sh klnap-revalidation-*.tgz
+
+  type-compatibility:
+    needs: verify
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        typescript-version: ['5.0.4', '7.0.2']
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bunx --package=typescript@${{ matrix.typescript-version }} tsc -p tsconfig.types.json
 
   security:
-    runs-on: ubuntu-latest
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun audit --audit-level=high
+      - uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3 # v0.9.0
+        if: github.event_name != 'push'
+        with:
+          advanced-security: false
+
+  security-upload:
+    if: github.event_name == 'push'
+    needs: security
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
-      - run: bun audit --audit-level=high
       - uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3 # v0.9.0
+
+  sandboxed-security-regressions:
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/security-runtime.yml
+    with:
+      source_sha: ${{ inputs.source_sha || github.sha }}

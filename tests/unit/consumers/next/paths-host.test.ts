@@ -110,4 +110,34 @@ describe('host paths', () => {
       }),
     ).toThrow(/not from this defineRevalidation|unknown path/)
   })
+
+  it('rejects a path reference from another config when the IDs match', () => {
+    const source = {
+      payload: {
+        schema: payloadRevalidationItemSchema,
+        resolve: () => 'home-page',
+      },
+    }
+    const foreign = compileHostRevalidation({
+      secret: 'foreign',
+      tags: { homePage: 'home' },
+      paths: { homePath: '/foreign/[locale]' },
+      sources: source,
+      layers: (_tags, paths) => ({
+        next: [{ key: { payload: 'home-page' }, invalidates: { paths: [paths.homePath] } }],
+      }),
+    }).paths.homePath!
+
+    expect(() =>
+      compileHostRevalidation({
+        secret: 'local',
+        tags: { homePage: 'home' },
+        paths: { homePath: '/local/[locale]' },
+        sources: source,
+        layers: () => ({
+          next: [{ key: { payload: 'home-page' }, invalidates: { paths: [foreign] } }],
+        }),
+      }),
+    ).toThrow(/path "homePath" is not from this defineRevalidation/)
+  })
 })

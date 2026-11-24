@@ -6,11 +6,12 @@ This page lists the extension points that are exported and tested. Anything else
 
 | Extension point | How | Verified by |
 | --- | --- | --- |
-| **Custom dispatcher** | Any object with `dispatch({ events, deduplicationId? })` returning a `DispatchOutcome`. Pass it as `dispatcher` to `revalidation()`, or as a `{ default, fallback }` pair. | `Dispatcher` type exported from `@klnap/revalidation`; `tests/unit/pipeline/http-producer-consumer.test.ts`; `scripts/consumer-smoke.sh` |
-| **Custom source** | `sources` with `schema`, `resolve`, optional `prepare` and `params` (full DSL), or `resolve` in the simple form. | `tests/unit/consumers/next/standalone-source.test.ts`; [custom sources](sources/custom.md) |
-| **Custom cache layer** | `execute: { <layer>: handler }` with layers named in `invalidate.layers` or `layers`. | `tests/unit/consumers/next/execute-paths.test.ts`; [Next.js consumer](consumers/next.md#custom-cache-layers) |
-| **Custom consumer configuration** | `createCache` / `createRevalidationHandler` with a configuration object instead of the registry. | `tests/unit/consumers/next/` |
-| **Custom transport** | A dispatcher (above). The HTTP dispatcher is one implementation, not part of the pipeline. | Dispatcher tests |
+| **Custom dispatcher** | Any object with `dispatch({ events, deduplicationId? })` returning a `DispatchOutcome`. Pass it as `dispatcher` to `revalidation()`, or as a `{ default, fallback }` pair. | `Dispatcher` type; [pipeline test](https://github.com/klnap/revalidation/blob/main/tests/unit/pipeline/http-producer-consumer.test.ts); [packed consumer smoke](https://github.com/klnap/revalidation/blob/main/scripts/consumer-smoke.sh) |
+| **Custom source** | `sources` with `schema`, `resolve`, optional `prepare` and `params` (full DSL), or `resolve` in the simple form. | [custom source test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/standalone-source.test.ts); [custom sources](sources/custom.md) |
+| **Custom cache layer** | `execute: { <layer>: handler }` with layers named in `invalidate.layers` or `layers`. | [cache layer test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/execute-paths.test.ts); [Next.js consumer](consumers/next.md#custom-cache-layers) |
+| **Custom consumer configuration** | `createCache` / `createRevalidationHandler` with a configuration object instead of the registry. | [consumer tests](https://github.com/klnap/revalidation/tree/main/tests/unit/consumers/next) |
+| **Custom transport** | A dispatcher (above). The HTTP dispatcher is one implementation, not part of the pipeline. | [HTTP dispatcher tests](https://github.com/klnap/revalidation/blob/main/tests/unit/dispatchers/http.test.ts) |
+| **Orderable Payload hooks** | `revalidationOrderableHooks` for the supported orderable-plugin integration. | [orderable hook test](https://github.com/klnap/revalidation/blob/main/tests/unit/producers/orderable-hooks.test.ts) |
 
 ## Supported through the wire format
 

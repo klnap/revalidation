@@ -5,12 +5,6 @@ export {
   resolveExcludeFields,
 } from './exclude-fields.js'
 export {
-  deferRevalidationUntilCommit,
-  markRevalidationAllLocales,
-  markRevalidationOrderOnly,
-  type RevalidationDeferral,
-} from './lifecycle/deferred.js'
-export {
   type RevalidationOrderableHooks,
   revalidationOrderableHooks,
 } from './lifecycle/orderable-hooks.js'

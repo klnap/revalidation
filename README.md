@@ -38,6 +38,7 @@ or `npm install @klnap/revalidation`.
 Requirements:
 
 - Node `^22.23.5 || ^24.22.3 || >=26.13.1`
+- TypeScript `>=5.0` for TypeScript consumers
 - `next >=16.4.5 <17` for the Next.js consumer (optional peer)
 - `payload >=3.94.1 <4` for the Payload producer (optional peer)
 
@@ -182,14 +183,14 @@ A dispatcher delivers events from a producer to a consumer. The built-in dispatc
 
 | Subpath | Contents |
 | --- | --- |
-| `@klnap/revalidation` | Framework-independent pipeline, error classes, dispatcher and target helpers |
-| `@klnap/revalidation/consumers/next` | `defineRevalidation`, `defineRevalidationTags`, `createCache`, `createRevalidationHandler`, `POST`, `invalidKey` |
-| `@klnap/revalidation/producers/payload` | `revalidation()` plugin, orderable hooks, exclude-field helpers |
-| `@klnap/revalidation/sources/payload` | Payload wire item schema and `payloadRevalidationSource()` |
-| `@klnap/revalidation/dispatchers` | `http`, target helpers |
+| `@klnap/revalidation` | `createPipeline`, dispatch outcome helpers, error classes, target normalization, and core contracts |
+| `@klnap/revalidation/consumers/next` | `defineRevalidation`, `defineRevalidationTags`, `createCache`, `createRevalidationHandler`, `POST`, `invalidKey`, and consumer types |
+| `@klnap/revalidation/producers/payload` | `revalidation()`, `revalidationOrderableHooks`, exclude-field helpers, and producer types |
+| `@klnap/revalidation/sources/payload` | Payload wire item schema, `PayloadRevalidationItem`, and `payloadRevalidationSource()` |
+| `@klnap/revalidation/dispatchers` | `http`, target helpers, and dispatcher types |
 | `@klnap/revalidation/dispatchers/http` | `http()` and `HttpDispatcherConfig` |
 
-Only these subpaths are public. Files under `src/` are not.
+Only these subpaths and their declared exports are public. The contract tests pin runtime export names, and type tests compile against generated package declarations. Files under `src/` are not public.
 
 ## Changelog and license
 

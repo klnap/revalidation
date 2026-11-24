@@ -12,7 +12,10 @@ import {
   uniqueLocalesFromChanges,
 } from '../lifecycle/helpers.js'
 import { resolveMediaAffectedLocales } from './resolve-media-affected-locales.js'
-import { resolveMediaDependentChanges } from './resolve-media-dependents.js'
+import {
+  type MediaDependencyFailure,
+  resolveMediaDependentChanges,
+} from './resolve-media-dependents.js'
 
 type MediaOptions = {
   pluginExcludeFields?: readonly string[]
@@ -22,6 +25,21 @@ type MediaOptions = {
 
 const errorDetail = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
+
+const logResolutionFailures = (
+  logger: Parameters<typeof revalidationLogError>[0],
+  subject: string,
+  failures: MediaDependencyFailure[],
+): void => {
+  for (const failure of failures) {
+    const locale = failure.locale ? ` · locale:${failure.locale}` : ''
+    revalidationLogError(
+      logger,
+      `media dependency resolution incomplete · ${failure.refSlug}${locale} · ${errorDetail(failure.error)}`,
+      subject,
+    )
+  }
+}
 
 /** Fail-open like parent revalidation: a read error is logged and does not reject the media save. */
 const updateAfterChange = async (
@@ -59,19 +77,23 @@ const updateAfterChange = async (
     return
   }
 
-  const changes = await resolveMediaDependentChanges({
+  const resolution = await resolveMediaDependentChanges({
     mediaId,
     mediaSlug: collection.slug,
     payload: req.payload,
+    req,
     locales: affectedLocales,
     operation: 'update',
   })
+  logResolutionFailures(req.payload.logger, subject, resolution.failures)
 
-  if (!changes.length) {
+  if (!resolution.changes.length) {
+    if (!resolution.complete) return
     revalidationLog.skip(req.payload.logger, subject, 'no references')
     return
   }
 
+  const { changes } = resolution
   const posted = uniqueLocalesFromChanges(changes.map((c) => c.locale))
   logRevalidateDispatch(req.payload.logger, subject, posted)
 
@@ -99,19 +121,23 @@ export const createRevalidateMediaDependentsBeforeDelete = (
     const subject = mediaSubject(id)
     try {
       const locales = listLocales(req)
-      const changes = await resolveMediaDependentChanges({
+      const resolution = await resolveMediaDependentChanges({
         mediaId: id,
         mediaSlug: collection.slug,
         payload: req.payload,
+        req,
         locales,
         operation: 'update',
       })
+      logResolutionFailures(req.payload.logger, subject, resolution.failures)
 
-      if (!changes.length) {
+      if (!resolution.changes.length) {
+        if (!resolution.complete) return
         revalidationLog.skip(req.payload.logger, subject, 'no references')
         return
       }
 
+      const { changes } = resolution
       const posted = uniqueLocalesFromChanges(changes.map((c) => c.locale))
       logRevalidateDispatch(req.payload.logger, subject, posted)
 

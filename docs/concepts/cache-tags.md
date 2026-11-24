@@ -52,13 +52,13 @@ For an event with `key: "pages"`, `locale: "en"` and `slug: "about"`, the rule r
 Checked at compile time:
 
 - The tag name must be declared: `tags.nope(...)` does not compile.
-- A tag helper must be called with an argument: `tags.page()` does not compile.
-- Parameter values must be `string` or `undefined`: `tags.page({ locale: 'en', slug: 1 })` does not compile.
+- A static tag takes no arguments: `tags.navigation()` compiles, but `tags.navigation({})` does not.
+- A dynamic tag requires every template parameter: `tags.page({ locale: 'en' })` does not compile.
+- Parameter values must be strings: `tags.page({ locale: 'en', slug: 1 })` does not compile.
 
 Not checked at compile time:
 
-- Which parameters a template needs. The template is a plain `string`, so `tags.page({ locale: 'en' })` compiles and throws at runtime (see below).
-- Extra or misspelled keys. `tags.page({ locale: 'en', slug: 'a', lang: 'x' })` compiles and ignores `lang`.
+- Extra keys on values passed through variables are not rejected by structural typing.
 - `null` values from JavaScript callers, or values cast with `as`.
 - Tags declared by a different `defineRevalidation` call. Their names are not compared at compile time.
 

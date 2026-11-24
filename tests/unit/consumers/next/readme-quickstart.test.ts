@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-
 import {
-  defineRevalidation,
   getDefinedRevalidation,
-  invalidKey,
   resetDefinedRevalidation,
-} from '../../../../src/consumers/next/index'
+} from '../../../../src/consumers/next/define-revalidation'
+import { defineRevalidation, invalidKey } from '../../../../src/consumers/next/index'
 import { inspectHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
 
 afterEach(resetDefinedRevalidation)
