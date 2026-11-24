@@ -8,10 +8,13 @@ const pushRendered = (
   render: (params: TagParamsBag) => string | null,
   params: TagParamsBag,
   mode: CacheMode,
+  onSkip?: () => void,
 ): void => {
   const value = render(params)
   if (value !== null) {
     entries.push({ value, mode })
+  } else {
+    onSkip?.()
   }
 }
 
@@ -20,16 +23,17 @@ export const resolvePathEntries = (
   params: TagParamsBag,
   defaultMode: CacheMode,
   ruleMode?: CacheMode,
+  onSkip?: () => void,
 ): CacheEntry[] => {
   const mode = ruleMode ?? defaultMode
   const meta = getTagTemplateMeta(pathDef as TemplateMetaCarrier)
   const render = meta?.render ?? ((p: TagParamsBag) => pathDef(p))
 
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) assertPathValue(key, value)
+    if (value !== undefined && value !== null) assertPathValue(key, value)
   }
 
   const entries: CacheEntry[] = []
-  pushRendered(entries, render, params, mode)
+  pushRendered(entries, render, params, mode, onSkip)
   return entries
 }

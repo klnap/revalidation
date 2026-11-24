@@ -10,11 +10,13 @@
 import { createRevalidationHandler } from '../create-cache.js'
 import { getDefinedRevalidation } from '../define-revalidation.js'
 
-let route: ((req: Request) => Promise<Response>) | undefined
+let route: { config: unknown; handler: (req: Request) => Promise<Response> } | undefined
 
+// Rebuilds the handler when defineRevalidation replaces the configuration (for example on dev reload).
 export async function POST(req: Request): Promise<Response> {
-  if (!route) {
-    route = createRevalidationHandler(getDefinedRevalidation())
+  const config = getDefinedRevalidation()
+  if (!route || route.config !== config) {
+    route = { config, handler: createRevalidationHandler(config) }
   }
-  return route(req)
+  return route.handler(req)
 }

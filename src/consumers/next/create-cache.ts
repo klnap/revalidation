@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { DEFAULT_MAX_EVENT_ITEMS } from '../../core/event-limits.js'
 import {
+  CacheConfigurationError,
   CacheExecutionError,
   CacheRequestError,
   CacheSchemaError,
@@ -138,8 +139,13 @@ export const createCache = (config: NextRevalidationHandlerConfig) => {
             source: result.source,
             cacheKeys: result.cacheKeys,
           })
-        } else {
+        } else if (layerName === 'next') {
           await executeNextLayer(operations)
+        } else {
+          // Only `next` has a built-in executor; other layers must be provided through `execute`.
+          throw new CacheConfigurationError(
+            `No execute handler configured for layer "${layerName}"`,
+          )
         }
       } catch (error) {
         failures.push(layerName)
