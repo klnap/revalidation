@@ -22,7 +22,7 @@ export const createTestPayload = async (
     collections,
     plugins,
   })
-  const payload = await getPayload({ config })
+  const payload = await getPayload({ config, key: dir })
 
   return {
     payload,
