@@ -32,14 +32,17 @@ describe('media-triggered events carry the parent identity', () => {
       findGlobal: mock(),
     }
 
-    const changes = await resolveMediaDependentChanges({
+    const { changes, complete, failures } = await resolveMediaDependentChanges({
       mediaId: 7,
       mediaSlug: 'media',
       locales: ['en'],
       payload: payload as never,
+      req: {} as never,
     })
 
     expect(changes).toHaveLength(1)
+    expect(complete).toBe(true)
     expect(changes[0]).toMatchObject({ routeSlug: 'a', identifiers: { uid: 'a' } })
+    expect(failures).toEqual([])
   })
 })

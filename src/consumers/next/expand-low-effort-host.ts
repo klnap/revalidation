@@ -11,7 +11,6 @@ import type {
   TagTemplate,
 } from './host-types.js'
 import { passthroughWireItemSchema } from './passthrough-wire-item-schema.js'
-import { buildPathDefs, buildTagDefs } from './registry-builders.js'
 
 /** Internal: low-effort rules + wire handler apply to any CMS `envelope.source` label. */
 const LOW_EFFORT_ANY_SOURCE = '*'
@@ -79,6 +78,8 @@ export const expandLowEffortHost = <
   TPaths extends Record<string, PathTemplate> | undefined,
 >(
   input: DefineRevalidationInputLowEffort<TTags, TPaths>,
+  builtTags: BuiltTags<Record<string, TagTemplate>>,
+  builtPaths: BuiltPaths<Record<string, PathTemplate>>,
 ): DefineRevalidationInputFull<
   TTags,
   TPaths extends Record<string, PathTemplate> ? TPaths : Record<string, never>,
@@ -89,11 +90,7 @@ export const expandLowEffortHost = <
       'resolve is required — map wire items to invalidate cache keys',
     )
   }
-  const builtTags = buildTagDefs(input.tags)
   const hasPaths = Boolean(input.paths && Object.keys(input.paths).length > 0)
-  const builtPaths = (input.paths ? buildPathDefs(input.paths) : {}) as BuiltPaths<
-    Record<string, PathTemplate>
-  >
 
   const layerMaps = resolveLowEffortLayerMaps(
     input,

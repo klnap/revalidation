@@ -39,31 +39,48 @@ export type PathTemplate = string
 
 export type TagBuilder = (params: TagParamsBag) => string
 
-export type TagDef<TId extends string = string> = TagBuilder & {
+type TemplateParamNames<T extends string> = T extends `${string}[${infer Key}]${infer Rest}`
+  ? Key | TemplateParamNames<Rest>
+  : never
+
+type TemplateBuilder<T extends string> = string extends T
+  ? TagBuilder
+  : [TemplateParamNames<T>] extends [never]
+    ? () => string
+    : (params: { [K in TemplateParamNames<T>]: string }) => string
+
+export type TagDef<
+  TId extends string = string,
+  TTemplate extends string = string,
+> = TemplateBuilder<TTemplate> & {
   readonly [TAG_SYMBOL]: TId
 }
 
-export type PathBuilder = TagBuilder
-
-export type PathDef<TId extends string = string> = PathBuilder & {
+export type PathDef<
+  TId extends string = string,
+  TTemplate extends string = string,
+> = TemplateBuilder<TTemplate> & {
   readonly [PATH_SYMBOL]: TId
 }
 
+export type TagReference = { readonly [TAG_SYMBOL]: string }
+export type PathReference = { readonly [PATH_SYMBOL]: string }
+
 export type BuiltTags<T extends Record<string, TagTemplate> = Record<string, TagTemplate>> = {
-  [K in keyof T]-?: TagDef<K & string>
+  [K in keyof T]-?: TagDef<K & string, T[K]>
 }
 
 export type BuiltPaths<T extends Record<string, PathTemplate> = Record<string, PathTemplate>> = {
-  [K in keyof T]-?: PathDef<K & string>
+  [K in keyof T]-?: PathDef<K & string, T[K]>
 }
 
 export type RevalidateObject = {
-  tags?: readonly TagDef<string>[]
-  paths?: readonly PathDef<string>[]
+  tags?: readonly TagReference[]
+  paths?: readonly PathReference[]
   mode?: CacheMode
 }
 
-export type RevalidateSpec = readonly TagDef<string>[] | RevalidateObject
+export type RevalidateSpec = readonly TagReference[] | RevalidateObject
 
 export type LowEffortLayerMap = Record<string, RevalidateSpec>
 

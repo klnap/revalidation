@@ -139,38 +139,48 @@ const fetchPreviousLocaleDoc = async ({
   const schema = 'collection' in args ? args.collection : args.global
   if (!draftVersionsEnabled(schema)) return undefined
 
-  const result =
-    'collection' in args
-      ? await req.payload.findVersions({
-          collection: args.collection.slug,
-          where: { parent: { equals: doc.id } },
-          locale: typedLocale,
-          limit: 30,
-          sort: '-updatedAt',
-          depth: 0,
-          overrideAccess: true,
-          req,
-        })
-      : await req.payload.findGlobalVersions({
-          slug: args.global.slug,
-          locale: typedLocale,
-          limit: 30,
-          sort: '-updatedAt',
-          depth: 0,
-          overrideAccess: true,
-          req,
-        })
+  let page = 1
+  let latest: VersionRow | undefined
+  const publishAllLocales = isPublishAllLocales(req)
 
-  const published = (result.docs as VersionRow[]).filter((row) => isPublishedRow(row, locale))
-  const latest = published[0]
-  if (!latest) return undefined
+  for (;;) {
+    const result =
+      'collection' in args
+        ? await req.payload.findVersions({
+            collection: args.collection.slug,
+            where: { parent: { equals: doc.id } },
+            locale: typedLocale,
+            limit: 30,
+            page,
+            sort: '-updatedAt',
+            depth: 0,
+            overrideAccess: true,
+            req,
+          })
+        : await req.payload.findGlobalVersions({
+            slug: args.global.slug,
+            locale: typedLocale,
+            limit: 30,
+            page,
+            sort: '-updatedAt',
+            depth: 0,
+            overrideAccess: true,
+            req,
+          })
 
-  if (!isPublishAllLocales(req)) {
-    return published[1]?.version
+    for (const row of result.docs as VersionRow[]) {
+      if (!isPublishedRow(row, locale)) continue
+      if (!latest) {
+        latest = row
+        continue
+      }
+      if (!publishAllLocales) return row.version
+      if (versionTime(row) < versionTime(latest) - BATCH_WINDOW_MS) return row.version
+    }
+
+    if (!result.hasNextPage) return undefined
+    page += 1
   }
-
-  const batchFloor = versionTime(latest) - BATCH_WINDOW_MS
-  return published.find((row) => versionTime(row) < batchFloor)?.version
 }
 
 export const readCollectionRouteSlug = (

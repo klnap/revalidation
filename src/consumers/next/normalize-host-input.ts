@@ -1,6 +1,8 @@
 import { CacheConfigurationError } from '../../core/errors.js'
 import { expandLowEffortHost } from './expand-low-effort-host.js'
 import type {
+  BuiltPaths,
+  BuiltTags,
   DefineRevalidationInput,
   DefineRevalidationInputFull,
   DefineRevalidationInputLowEffort,
@@ -23,6 +25,8 @@ export const normalizeHostInput = <
   TSource extends string,
 >(
   input: DefineRevalidationInput<TTags, TPaths, TSource>,
+  builtTags: BuiltTags<Record<string, TagTemplate>>,
+  builtPaths: BuiltPaths<Record<string, PathTemplate>>,
 ): DefineRevalidationInputFull<TTags, TPaths, string> => {
   if (hasLowEffortInvalidate(input) && hasOwn(input, 'sources')) {
     throw new CacheConfigurationError(
@@ -39,6 +43,8 @@ export const normalizeHostInput = <
   if (isLowEffortHostInput(input)) {
     return expandLowEffortHost(
       input as DefineRevalidationInputLowEffort<TTags, TPaths | undefined>,
+      builtTags,
+      builtPaths,
     ) as DefineRevalidationInputFull<TTags, TPaths, string>
   }
 

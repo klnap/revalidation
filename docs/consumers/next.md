@@ -36,7 +36,7 @@ export { POST } from '@klnap/revalidation/consumers/next';
 
 - Import the declarations from the route file, or from a module that the route file imports. If the route is in a separate module graph where `defineRevalidation` never ran, `POST` fails with the message above.
 - Import the declarations in server code only. The consumer imports `next/cache`; keep `@/revalidation` out of client components.
-- In development, calling `defineRevalidation` again with the same secret replaces the configuration, and `POST` picks up the new one. In production, a second call returns the existing declarations and does not replace them.
+- In development, calling `defineRevalidation` again with the same secret replaces the configuration, and `POST` picks up the new one. In production, repeating the same configuration object reuses its registration; a different object throws. Configure the consumer once.
 
 ### Explicit configuration
 
@@ -114,6 +114,7 @@ A layer that has no `execute` handler and is not `next` fails the request with `
 
 - The `Authorization` header must be `Bearer <secret>`. The comparison is constant-time. Anything else gets `401`.
 - Bodies are limited to 256 KiB by default (`maxBodyBytes`). Larger bodies get `400`.
+- The handler counts streamed bytes and starts cancellation after the limit; it does not wait for the stream's cancellation promise before returning `400`. The framework owns transport cleanup.
 - Events are limited to 100 items by default (`maxEvents`). A larger event gets `400`. The producer splits its changes into events of at most 100 items.
 
 See [security](../security.md) for what these checks do not protect against.
@@ -134,6 +135,6 @@ With the simple form, any `source` name is accepted and routed through the `*` r
 
 ## Verification status
 
-- The request handling, tag generation, rule matching and layer execution are covered by unit tests in `tests/` and `src/`.
-- The Quick Start consumer flow is covered by `tests/unit/consumers/next/readme-quickstart.test.ts`; the custom source example by `standalone-source.test.ts`.
+- The source-repository unit tests cover request handling, tag generation, rule matching and layer execution. Tests are not included in the npm package.
+- The [Quick Start consumer test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/readme-quickstart.test.ts) and [custom source test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/standalone-source.test.ts) live in the source repository.
 - Module-graph behavior across Route Handlers, instrumentation and Server Components, and production builds, was not exercised against a running Next.js application. Verify it in your application before relying on it.

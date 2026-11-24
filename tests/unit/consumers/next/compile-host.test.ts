@@ -125,4 +125,32 @@ describe('compileHostRevalidation', () => {
       }),
     ).toThrow(/not from this defineRevalidation/)
   })
+
+  it('rejects a tag reference from another config when the IDs match', () => {
+    const source = {
+      payload: {
+        schema: payloadRevalidationItemSchema,
+        resolve: () => 'home-page',
+      },
+    }
+    const foreign = compileHostRevalidation({
+      secret: 'foreign',
+      tags: { homePage: 'foreign:[locale]:home-page' },
+      sources: source,
+      layers: (tags) => ({
+        next: [{ key: { payload: 'home-page' }, invalidates: [tags.homePage] }],
+      }),
+    }).tags.homePage!
+
+    expect(() =>
+      compileHostRevalidation({
+        secret: 'local',
+        tags: { homePage: 'local:[locale]:home-page' },
+        sources: source,
+        layers: () => ({
+          next: [{ key: { payload: 'home-page' }, invalidates: [foreign] }],
+        }),
+      }),
+    ).toThrow(/not from this defineRevalidation/)
+  })
 })

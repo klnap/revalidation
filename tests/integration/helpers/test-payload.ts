@@ -17,6 +17,7 @@ export const createTestPayload = async (
   const dir = mkdtempSync(join(tmpdir(), 'revalidation-int-'))
   const config = await buildConfig({
     secret: 'revalidation-test-secret-32chars!!',
+    logger: { options: { level: 'silent' } },
     db: sqliteAdapter({ client: { url: `file:${join(dir, 'db.sqlite')}` }, push: true }),
     typescript: { autoGenerate: false },
     collections,

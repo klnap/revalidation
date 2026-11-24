@@ -16,11 +16,6 @@ export {
   type SourceDefinition,
 } from './pipeline.js'
 export {
-  getRevalidationPluginTarget,
-  resetRevalidationPluginTarget,
-  setRevalidationPluginTarget,
-} from './plugin-target.js'
-export {
   normalizeTargets,
   type RevalidationTarget,
   type TargetConfig,

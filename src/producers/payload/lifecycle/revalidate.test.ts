@@ -964,4 +964,84 @@ describe('revalidate', () => {
     expect(enRows).toHaveLength(1)
     expect(enRows[0]?.slug).toBe('en-slug')
   })
+
+  it('finds the previous published identifier beyond the first versions page', async () => {
+    const { http } = await import('../../../dispatchers/http/index.js')
+    const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200 }))
+    // @ts-expect-error test double
+    globalThis.fetch = fetchMock
+    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const localeDocs: Record<string, Record<string, unknown>> = {
+      pl: { id: '1', title: 'Projekt', slug: 'pl-new', _status: 'published' },
+      en: { id: '1', title: 'Project', slug: 'en-slug', _status: 'published' },
+      de: { id: '1', title: 'Projekt DE', slug: 'de-slug', _status: 'published' },
+    }
+    const findVersions = mock(({ locale, page = 1 }: { locale?: string; page?: number }) => {
+      const current = localeDocs[locale ?? 'pl']!
+      if (page === 1) {
+        return Promise.resolve({
+          docs: Array.from({ length: 30 }, (_, index) => ({
+            updatedAt: `2026-01-01T12:${String(index).padStart(2, '0')}:00.000Z`,
+            version: { slug: `draft-${index}`, _status: 'draft' },
+          })),
+          hasNextPage: true,
+        })
+      }
+      return Promise.resolve({
+        docs: [
+          { updatedAt: '2026-01-01T12:00:00.000Z', version: current },
+          {
+            updatedAt: '2026-01-01T11:00:00.000Z',
+            version: { ...current, slug: locale === 'pl' ? 'pl-old' : current.slug },
+          },
+        ],
+        hasNextPage: false,
+      })
+    })
+
+    await runCommitted(
+      {
+        operation: 'update',
+        req: {
+          ...baseReq,
+          locale: 'pl',
+          query: { publishSpecificLocale: 'pl' },
+          payload: {
+            ...baseReq.payload,
+            config: {
+              localization: {
+                locales: [
+                  { code: 'pl', label: 'Polish' },
+                  { code: 'en', label: 'English' },
+                  { code: 'de', label: 'German' },
+                ],
+              },
+            },
+            findByID: mock(({ locale }: { locale?: string }) =>
+              Promise.resolve(localeDocs[locale ?? 'pl']),
+            ),
+            findVersions,
+          },
+        },
+        doc: localeDocs.pl,
+        previousDoc: { id: '1', title: 'Projekt', slug: 'pl-old', _status: 'published' },
+        collection: {
+          slug: 'projects',
+          versions: { drafts: true },
+          fields: [{ name: 'slug', type: 'text', localized: true }],
+          custom: { revalidation: { identifier: 'slug' } },
+        },
+      } as unknown as RevalidateArgs,
+      dispatcher,
+    )
+
+    expect(findVersions.mock.calls.some(([options]) => options.page === 2)).toBe(true)
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
+    )
+    expect(body.data.map((item: { locale: string }) => item.locale)).toEqual(
+      expect.arrayContaining(['pl', 'en', 'de']),
+    )
+    expect(body.data.some((item: { slug: string }) => item.slug === 'pl-old')).toBe(true)
+  })
 })

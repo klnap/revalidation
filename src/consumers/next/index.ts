@@ -7,11 +7,7 @@ export {
   type DefineRevalidationTagsInput,
   defineRevalidation,
   defineRevalidationTags,
-  getDefinedRevalidation,
-  getRevalidation,
-  resetDefinedRevalidation,
 } from './define-revalidation.js'
-export { executeNextLayer } from './execute-next.js'
 export type {
   BuiltPaths,
   BuiltTags,

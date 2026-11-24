@@ -20,13 +20,13 @@ import {
   type HostLayersInput,
   type HostSourceDefinition,
   PATH_SYMBOL,
-  type PathDef,
+  type PathReference,
   type PathTemplate,
   type RevalidateObject,
   type RevalidateSpec,
   type RevalidationEvent,
   TAG_SYMBOL,
-  type TagDef,
+  type TagReference,
   type TagTemplate,
 } from './host-types.js'
 import { normalizeHostInput } from './normalize-host-input.js'
@@ -47,7 +47,7 @@ export type CompileHostResult = {
 const isPayloadSchema = (schema: v.GenericSchema): boolean =>
   schema === payloadRevalidationItemSchema
 
-const tagIdFromDef = (tag: TagDef<string>): string => {
+const tagIdFromDef = (tag: TagReference): string => {
   const id = tag[TAG_SYMBOL]
   if (!id) {
     throw new CacheConfigurationError(
@@ -57,7 +57,7 @@ const tagIdFromDef = (tag: TagDef<string>): string => {
   return id
 }
 
-const pathIdFromDef = (path: PathDef<string>): string => {
+const pathIdFromDef = (path: PathReference): string => {
   const id = path[PATH_SYMBOL]
   if (!id) {
     throw new CacheConfigurationError(
@@ -79,6 +79,8 @@ const parseRevalidateSpec = (
   index: number,
   tagIds: Set<string>,
   pathIds: Set<string>,
+  tagDefs: Readonly<Record<string, TagReference>>,
+  pathDefs: Readonly<Record<string, PathReference>>,
 ): ParsedRevalidateSpec => {
   if (Array.isArray(spec)) {
     if (!spec.length) {
@@ -87,12 +89,17 @@ const parseRevalidateSpec = (
       )
     }
     const compiledTagIds: string[] = []
-    const tagList = spec as readonly TagDef<string>[]
+    const tagList = spec as readonly TagReference[]
     for (const tag of tagList) {
       const id = tagIdFromDef(tag)
       if (!tagIds.has(id)) {
         throw new CacheConfigurationError(
           `Layer "${layerName}" rule #${index}: unknown tag "${id}"`,
+        )
+      }
+      if (tagDefs[id] !== tag) {
+        throw new CacheConfigurationError(
+          `Layer "${layerName}" rule #${index}: tag "${id}" is not from this defineRevalidation`,
         )
       }
       compiledTagIds.push(id)
@@ -109,6 +116,11 @@ const parseRevalidateSpec = (
     if (!tagIds.has(id)) {
       throw new CacheConfigurationError(`Layer "${layerName}" rule #${index}: unknown tag "${id}"`)
     }
+    if (tagDefs[id] !== tag) {
+      throw new CacheConfigurationError(
+        `Layer "${layerName}" rule #${index}: tag "${id}" is not from this defineRevalidation`,
+      )
+    }
     compiledTagIds.push(id)
   }
 
@@ -116,6 +128,11 @@ const parseRevalidateSpec = (
     const id = pathIdFromDef(path)
     if (!pathIds.has(id)) {
       throw new CacheConfigurationError(`Layer "${layerName}" rule #${index}: unknown path "${id}"`)
+    }
+    if (pathDefs[id] !== path) {
+      throw new CacheConfigurationError(
+        `Layer "${layerName}" rule #${index}: path "${id}" is not from this defineRevalidation`,
+      )
     }
     compiledPathIds.push(id)
   }
@@ -134,6 +151,8 @@ const validateRule = (
   sourceNames: Set<string>,
   tagIds: Set<string>,
   pathIds: Set<string>,
+  tagDefs: Readonly<Record<string, TagReference>>,
+  pathDefs: Readonly<Record<string, PathReference>>,
   index: number,
   layerName: string,
 ): CompiledLayerRule => {
@@ -145,7 +164,15 @@ const validateRule = (
     }
   }
 
-  const parsed = parseRevalidateSpec(rule.invalidates, layerName, index, tagIds, pathIds)
+  const parsed = parseRevalidateSpec(
+    rule.invalidates,
+    layerName,
+    index,
+    tagIds,
+    pathIds,
+    tagDefs,
+    pathDefs,
+  )
 
   if (rule.prepare && typeof rule.prepare === 'object' && !('call' in rule.prepare)) {
     for (const source of Object.keys(rule.prepare)) {
@@ -178,10 +205,15 @@ export const compileHostRevalidation = <
 >(
   input: DefineRevalidationInput<TTags, TPaths, TSource>,
 ): CompileHostResult => {
-  const full = normalizeHostInput(input)
-
-  const builtTags = buildTagDefs(full.tags)
-  const builtPaths = full.paths ? buildPathDefs(full.paths) : ({} as BuiltPaths<TPaths>)
+  const builtTags = buildTagDefs(input.tags)
+  const builtPaths = input.paths
+    ? buildPathDefs(input.paths)
+    : ({} as BuiltPaths<Record<string, PathTemplate>>)
+  const full = normalizeHostInput(
+    input,
+    builtTags as BuiltTags<Record<string, TagTemplate>>,
+    builtPaths as BuiltPaths<Record<string, PathTemplate>>,
+  )
   const templateParamKeys = collectTemplateParamKeys(
     builtTags as BuiltTags<Record<string, TagTemplate>>,
     builtPaths as BuiltPaths<Record<string, PathTemplate>>,
@@ -204,7 +236,7 @@ export const compileHostRevalidation = <
 
   for (const [layerName, rules] of Object.entries(layersInput)) {
     rulesByLayer[layerName] = rules.map((rule, index) =>
-      validateRule(rule, sourceNames, tagIds, pathIds, index, layerName),
+      validateRule(rule, sourceNames, tagIds, pathIds, builtTags, builtPaths, index, layerName),
     )
   }
 

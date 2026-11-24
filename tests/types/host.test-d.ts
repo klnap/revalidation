@@ -1,5 +1,5 @@
-import { defineRevalidation } from '../../src/consumers/next/define-revalidation'
-import { payloadRevalidationItemSchema } from '../../src/sources/payload'
+import { defineRevalidation } from '@klnap/revalidation/consumers/next'
+import { payloadRevalidationItemSchema } from '@klnap/revalidation/sources/payload'
 
 const src = {
   schema: payloadRevalidationItemSchema,

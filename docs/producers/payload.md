@@ -82,7 +82,7 @@ Locales come from `config.localization`. Without localization, the producer uses
 ## Timing and failures
 
 - Each save hook schedules dispatch after the hook returns (one second later). Dispatch is not tied to the database commit, and a rolled-back save is not cancelled. If a save is rolled back after its hook ran, the event is still sent. Treat events as "a change was attempted", and make consumers tolerant of that.
-- Orderable reorders are deferred until commit through `deferRevalidationUntilCommit`, and discarded on rollback. This applies to the orderable hooks only.
+- The built-in orderable hooks defer reorders until commit and discard them on rollback. This applies to those hooks only.
 - Dispatch errors (transport errors, non-accepted outcomes) are logged and do not reject the save.
 - A read error while building an event (for example a failing `findByID`) is logged and does not reject the save. The affected revalidation is lost.
 

@@ -20,6 +20,8 @@ The consumer rejects large requests before processing them:
 | Event parameter length | 256 characters | `400` for the whole request |
 | Path length | 1024 characters | `400` |
 
+Streamed bodies are counted as read. Once the configured byte limit is crossed, the handler requests cancellation without awaiting the stream source; cancellation cannot delay or replace the `400` response. The hosting runtime owns transport cleanup.
+
 Path parameters are checked: path separators, control characters and dot segments (`..`) are rejected with `400`.
 
 ## Not protected
