@@ -1,6 +1,6 @@
 {
   "name": "@klnap/revalidation",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Event-driven cache revalidation: a Payload CMS producer, pluggable dispatchers, and a Next.js consumer.",
   "keywords": [
     "payload",

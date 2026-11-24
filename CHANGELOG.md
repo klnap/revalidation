@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
 ### Breaking
 
 - Stop exporting test-only reset functions and internal registry, lifecycle, and Next execution helpers. Use the documented producer and consumer APIs.
