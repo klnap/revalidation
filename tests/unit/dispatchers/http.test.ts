@@ -288,6 +288,46 @@ describe('http dispatcher bounds', () => {
     expect(cancel).toHaveBeenCalledTimes(2)
   })
 
+  it('allows plain http only to loopback hosts outside development and test', async () => {
+    const previous = process.env.NODE_ENV
+    const env = process.env as Record<string, string | undefined>
+    env.NODE_ENV = 'production'
+    const fetchMock = mock(async () => ({ ok: true, status: 200, statusText: 'OK' }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    try {
+      const event = { events: [{ source: 'cms', data: [] }] }
+      expect(
+        (
+          await http({
+            target: { url: 'http://localhost:3000/api/revalidate', secret: 's' },
+          }).dispatch(event)
+        ).status,
+      ).toBe('accepted')
+      expect(
+        (
+          await http({
+            target: { url: 'http://127.0.0.1:3000/api/revalidate', secret: 's' },
+          }).dispatch(event)
+        ).status,
+      ).toBe('accepted')
+      expect(
+        (
+          await http({ target: { url: 'http://[::1]:3000/api/revalidate', secret: 's' } }).dispatch(
+            event,
+          )
+        ).status,
+      ).toBe('accepted')
+
+      const refused = await http({
+        target: { url: 'http://frontend.example/api/revalidate', secret: 's' },
+      }).dispatch(event)
+      expect(refused.status).toBe('failed')
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      env.NODE_ENV = previous
+    }
+  })
+
   it('does not follow a redirect and reports it as a failed outcome', async () => {
     const fetchMock = mock(async (_url: string, _init?: RequestInit) => ({
       ok: false,

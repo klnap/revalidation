@@ -37,19 +37,24 @@ type PostOptions = {
   deliveryId: string
 }
 
-/** https only. http is allowed in development and test so local receivers work. */
+/** Hosts that only this machine can reach. Plain http to them never leaves the host. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * https everywhere. Plain http is allowed in development and test, and to loopback hosts in any
+ * environment, so a local production build can reach a local receiver. Other http targets are refused.
+ */
 const isAllowedUrl = (url: string): boolean => {
-  let protocol: string
+  let parsed: URL
   try {
-    protocol = new URL(url).protocol
+    parsed = new URL(url)
   } catch {
     return false
   }
-  if (protocol === 'https:') return true
-  return (
-    protocol === 'http:' &&
-    (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
-  )
+  if (parsed.protocol === 'https:') return true
+  if (parsed.protocol !== 'http:') return false
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') return true
+  return LOOPBACK_HOSTS.has(parsed.hostname)
 }
 
 /** Rejects as soon as the deadline passes, even when `fetch` ignores its abort signal. */
