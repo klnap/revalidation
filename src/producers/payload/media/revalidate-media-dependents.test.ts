@@ -1,16 +1,10 @@
 import { describe, expect, it, mock } from 'bun:test'
 import { mediaSharedFieldsEqual } from '../lifecycle/helpers.ts'
-import { getAtPath, MEDIA_REFERENCES, mediaIdsEqual, resolveMediaId } from './media-references.ts'
+import { getAtPath, mediaIdsEqual, resolveMediaId } from './media-references.ts'
 import { resolveMediaAffectedLocales } from './resolve-media-affected-locales.ts'
 import { resolveMediaDependentChanges } from './resolve-media-dependents.ts'
 
 describe('media-references helpers', () => {
-  it('registers all live upload paths', () => {
-    expect(MEDIA_REFERENCES).toHaveLength(9)
-    expect(MEDIA_REFERENCES.filter((ref) => ref.type === 'collection')).toHaveLength(3)
-    expect(MEDIA_REFERENCES.filter((ref) => ref.type === 'global')).toHaveLength(6)
-  })
-
   it('resolves media ids from numbers, strings, and objects', () => {
     expect(resolveMediaId(42)).toBe(42)
     expect(resolveMediaId('42')).toBe('42')
@@ -249,6 +243,35 @@ describe('resolveMediaAffectedLocales', () => {
   })
 })
 
+const upload = (name: string, extra: Record<string, unknown> = {}) => ({
+  name,
+  type: 'upload',
+  relationTo: 'media',
+  ...extra,
+})
+const socialMedia = {
+  name: 'socialMedia',
+  type: 'group',
+  fields: [{ name: 'image', type: 'group', fields: [upload('asset')] }],
+}
+const optedIn = { revalidation: true }
+const testConfig = {
+  collections: [
+    { slug: 'media', fields: [], custom: optedIn },
+    {
+      slug: 'projects',
+      custom: optedIn,
+      versions: { drafts: true },
+      fields: [upload('image'), upload('gallery', { hasMany: true }), socialMedia],
+    },
+  ],
+  globals: ['home-page', 'work-page', 'about-page', 'privacy-policy-page'].map((slug) => ({
+    slug,
+    custom: optedIn,
+    fields: [socialMedia],
+  })),
+}
+
 describe('resolveMediaDependentChanges', () => {
   it('builds parent changes for matching collections and globals', async () => {
     const find = mock(() =>
@@ -280,7 +303,8 @@ describe('resolveMediaDependentChanges', () => {
     const changes = await resolveMediaDependentChanges({
       mediaId: 99,
       locales: ['en'],
-      payload: { find, findGlobal } as never,
+      mediaSlug: 'media',
+      payload: { find, findGlobal, config: testConfig } as never,
     })
 
     expect(find).toHaveBeenCalled()
@@ -314,7 +338,8 @@ describe('resolveMediaDependentChanges', () => {
     const changes = await resolveMediaDependentChanges({
       mediaId: 1,
       locales: [],
-      payload: { find: mock(), findGlobal: mock() } as never,
+      mediaSlug: 'media',
+      payload: { find: mock(), findGlobal: mock(), config: testConfig } as never,
     })
 
     expect(changes).toEqual([])
@@ -335,7 +360,8 @@ describe('resolveMediaDependentChanges', () => {
     const changes = await resolveMediaDependentChanges({
       mediaId: heroMediaId,
       locales: ['pl'],
-      payload: { find, findGlobal: mock() } as never,
+      mediaSlug: 'media',
+      payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
     expect(changes).toEqual([
@@ -359,7 +385,8 @@ describe('resolveMediaDependentChanges', () => {
     await resolveMediaDependentChanges({
       mediaId: 77,
       locales: ['en'],
-      payload: { find, findGlobal: mock() } as never,
+      mediaSlug: 'media',
+      payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
     const galleryCall = find.mock.calls.find(([args]) => args?.where && 'gallery' in args.where)
@@ -381,7 +408,8 @@ describe('resolveMediaDependentChanges', () => {
     const changes = await resolveMediaDependentChanges({
       mediaId: 5,
       locales: ['pl'],
-      payload: { find, findGlobal: mock() } as never,
+      mediaSlug: 'media',
+      payload: { find, findGlobal: mock(), config: testConfig } as never,
     })
 
     expect(changes).toHaveLength(1)

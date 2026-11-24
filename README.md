@@ -1,28 +1,18 @@
-# `@klnap/revalidation`
+# @klnap/revalidation
 
-Connects Payload content changes to cache invalidation. It emits events through a dispatcher; a consumer must receive them and invalidate the relevant caches.
+Cache revalidation for Next.js, driven by events. The Next.js **consumer** is a protected route that expires cache tags and paths when it receives an event, and you can use it on its own from any system that can send an HTTP request. **Producers** emit those events from a CMS; Payload CMS is supported today. A **dispatcher** carries events from a producer to the consumer.
 
-```ts
-import { http } from '@klnap/revalidation/dispatchers/http';
-import { revalidation } from '@klnap/revalidation/producers/payload';
-
-const pages = {
-  slug: 'pages',
-  custom: { revalidation: true },
-  fields: [{ name: 'title', type: 'text' }],
-};
-const plugins = [
-  revalidation({
-    target: {
-      url: process.env.REVALIDATION_URL!,
-      secret: process.env.REVALIDATION_SECRET!,
-    },
-    dispatcher: http(),
-  }),
-];
+```
+CMS (producer)  ──▶  dispatcher (HTTP)  ──▶  Next.js route (consumer)  ──▶  revalidateTag / revalidatePath
 ```
 
-`custom.revalidation` opts collections and globals into hooks. The producer alone does not invalidate a cache.
+| Part | Role | Included |
+| --- | --- | --- |
+| Consumer | Receives events, maps them to cache tags and paths, invalidates them | Next.js |
+| Producer | Emits an event when content changes | Payload CMS |
+| Dispatcher | Delivers events to a consumer | HTTP |
+
+Use the consumer alone, or add the Payload producer to get automatic events, including [revalidation of the pages that use a changed media file](#media-dependent-revalidation).
 
 ## Install
 
@@ -36,18 +26,15 @@ or
 npm install @klnap/revalidation
 ```
 
-Node must be `^22.23.5 || ^24.22.3 || >=26.13.1`. The Payload producer requires `payload >=3.94.1 <4`; the Next.js consumer requires `next >=16.4.5 <17`. Both are optional peers: the core pipeline and HTTP dispatcher do not require either framework.
+Node must be `^22.23.5 || ^24.22.3 || >=26.13.1`. The Next.js consumer requires `next >=16.4.5 <17`; the Payload producer requires `payload >=3.94.1 <4`. Both are optional peers, and the core pipeline and HTTP dispatcher need neither.
 
-## Next.js consumer
+## Consumer: Next.js
 
-Define cache tags and map producer wire events to keys configured for invalidation:
+Define your cache tags and how events map to them, then export the package's route handler.
 
 ```ts
 // src/revalidation.ts
-import {
-  defineRevalidation,
-  invalidKey,
-} from '@klnap/revalidation/consumers/next';
+import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
 
 export const { tags } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
@@ -59,20 +46,84 @@ export const { tags } = defineRevalidation({
 });
 ```
 
-The `key` in a Payload event is the collection or global slug, so `pages` above selects that cache-key rule. The Payload item supplies default template parameters such as `locale` and `slug`.
-
-Export the package's `POST` handler from the host route:
-
 ```ts
 // app/api/revalidate/route.ts
 export { POST } from '@klnap/revalidation/consumers/next';
 ```
 
-Import the module that calls `defineRevalidation` during application startup, before requests reach the route handler. The route requires `Authorization: Bearer <secret>` matching the producer target secret. It accepts POST only.
+Import the module that calls `defineRevalidation` during application startup, before requests reach the route. The route accepts POST only and requires `Authorization: Bearer <secret>`. `mode` defaults to `'expire'`, which expires tags immediately; set `mode: 'stale'` for stale-while-revalidate. Use `paths` to invalidate paths, and `invalidate.layers` with `execute` for other cache layers such as a CDN.
 
-`mode` defaults to `'expire'`, which expires tags immediately. Set `mode: 'stale'` for stale-while-revalidate. Path invalidation is available through `paths`; use `invalidate.layers` and `execute` for additional cache layers.
+Use the same tags where you cache data, so invalidation hits what you cached:
 
-## Producer behavior
+```ts
+import { cacheTag } from 'next/cache';
+import { tags } from '@/revalidation';
+
+async function getPage(locale: string, slug: string) {
+  'use cache';
+  cacheTag(tags.page({ locale, slug }));
+  // ...
+}
+```
+
+### Without a CMS
+
+The consumer does not need Payload. Describe your own event source and send it a request. This example accepts `{ "key": "pricing" }` events from any service:
+
+```ts
+import * as v from 'valibot';
+import { defineRevalidation } from '@klnap/revalidation/consumers/next';
+
+defineRevalidation({
+  secret: process.env.REVALIDATION_SECRET!,
+  tags: { pricing: 'pricing' },
+  sources: {
+    webhook: {
+      schema: v.object({ key: v.string() }),
+      resolve: ({ item }) => (item as { key: string }).key,
+    },
+  },
+  layers: (tags) => ({
+    next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
+  }),
+});
+```
+
+```sh
+curl -X POST https://example.com/api/revalidate \
+  -H "Authorization: Bearer $REVALIDATION_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"webhook","data":[{"key":"pricing"}]}'
+```
+
+Custom sources use [`valibot`](https://valibot.dev) schemas, so install it in your app (`bun add valibot` or `npm install valibot`). An event whose `source` is unknown, whose item fails the schema, or whose key matches no rule is skipped and logged.
+
+## Producer: Payload CMS
+
+`revalidation()` is a Payload plugin that emits an event when content changes. Collections and globals opt in with `custom.revalidation`.
+
+```ts
+import { http } from '@klnap/revalidation/dispatchers/http';
+import { revalidation } from '@klnap/revalidation/producers/payload';
+
+const pages = {
+  slug: 'pages',
+  custom: { revalidation: true },
+  fields: [{ name: 'title', type: 'text' }],
+};
+
+const plugins = [
+  revalidation({
+    target: {
+      url: process.env.REVALIDATION_URL!,
+      secret: process.env.REVALIDATION_SECRET!,
+    },
+    dispatcher: http(),
+  }),
+];
+```
+
+The producer alone does not invalidate a cache: it needs a consumer, such as the Next.js route above, at `REVALIDATION_URL`. The `key` in a Payload event is the collection or global slug, so `pages` selects the cache-key rule named `pages` in the consumer. The event item also carries `locale`, `slug` and other fields that fill template parameters such as `[locale]` and `[slug]`.
 
 `custom.revalidation: true` enables collection `afterChange` and `afterDelete` hooks. Globals support `afterChange` only. Configure details per collection or global:
 
@@ -88,9 +139,29 @@ custom: {
 
 `identifier` accepts one field path or a list of field paths. Without it, the document slug is used as the route identifier. `enabled: false` opts a schema item out. Excluded fields are omitted when comparing snapshots; schema-level settings override plugin per-slug settings, which override plugin-wide `excludeFields`.
 
-The producer can also revalidate documents that reference changed media. Set the optional `media` collection override when automatic selection is ambiguous. Media reference paths are package-defined; host config cannot register new paths.
+### Media-dependent revalidation
 
-## HTTP dispatcher
+Replace or edit an image and every page that uses it stays stale, because only the media document changed. The producer closes that gap: when a file in your upload collection is updated or deleted, it finds the documents that reference it and emits update events for them, so the consumer expires their cache like after a normal edit.
+
+- **Automatic.** It reads your upload fields (`upload` or `relationship` fields pointing at the media collection) from the Payload config, including those inside rows, groups, named tabs and arrays, and `hasMany` fields. There is no registry to maintain: add an upload field and it is covered.
+- **Opt-in per document type.** Only collections and globals that set `custom.revalidation` are searched, so you control which events are emitted.
+- **Published content only.** For collections with drafts, only published documents are revalidated. A delete revalidates every dependent, before the media row is removed.
+- **Locale-aware.** Only the locales whose media data actually changed are revalidated. `excludeFields` (for example `['alt']`) ignores fields that do not affect output.
+- **Deduplicated.** A document that references the file through several fields produces one event per locale.
+
+The upload collection is detected automatically (the only upload collection, or the one with slug `media`). Override it, or exclude fields, with the `media` option:
+
+```ts
+revalidation({
+  dispatcher: http(),
+  target,
+  media: { collection: mediaCollection, excludeFields: ['alt'] },
+});
+```
+
+Blocks and relationships that allow several collections are not followed. In globals, upload fields inside arrays and `hasMany` uploads are skipped.
+
+## Dispatcher: HTTP
 
 ```ts
 http({
@@ -111,14 +182,16 @@ The HTTP dispatcher sends a shared Bearer secret. Use HTTPS and keep the secret 
 
 ## Public exports
 
-- `@klnap/revalidation`: framework-independent pipeline, types, errors, and target helpers
-- `@klnap/revalidation/sources/payload`: Payload wire schema and `payloadRevalidationSource()`
-- `@klnap/revalidation/producers/payload`: `revalidation()` and Payload producer helpers
-- `@klnap/revalidation/consumers/next`: `defineRevalidation`, `createRevalidationHandler`, `createCache`, and `POST`
-- `@klnap/revalidation/dispatchers`: dispatcher and target helpers
-- `@klnap/revalidation/dispatchers/http`: `http()` and `HttpDispatcherConfig`
+| Subpath | Contents |
+| --- | --- |
+| `@klnap/revalidation` | Framework-independent pipeline, types, errors, and target helpers |
+| `@klnap/revalidation/consumers/next` | Consumer: `defineRevalidation`, `createRevalidationHandler`, `createCache`, `POST` |
+| `@klnap/revalidation/producers/payload` | Producer: `revalidation()` and Payload helpers |
+| `@klnap/revalidation/sources/payload` | Payload wire schema and `payloadRevalidationSource()` |
+| `@klnap/revalidation/dispatchers/http` | `http()` and `HttpDispatcherConfig` |
+| `@klnap/revalidation/dispatchers` | Dispatcher and target helpers |
 
-Use only these package subpaths; source-file deep imports are not public API.
+Use only these subpaths; source-file deep imports are not public API.
 
 ## License
 

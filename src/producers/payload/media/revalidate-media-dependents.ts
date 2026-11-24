@@ -53,6 +53,7 @@ export const createRevalidateMediaDependentsAfterChange = (
 
     const changes = await resolveMediaDependentChanges({
       mediaId,
+      mediaSlug: collection.slug,
       payload: req.payload,
       locales: affectedLocales,
       operation: 'update',
@@ -75,11 +76,12 @@ export const createRevalidateMediaDependentsAfterChange = (
 export const createRevalidateMediaDependentsBeforeDelete = (
   dispatcher: Dispatcher,
 ): CollectionBeforeDeleteHook => {
-  return async ({ id, req }) => {
+  return async ({ id, req, collection }) => {
     const subject = mediaSubject(id)
     const locales = listLocales(req)
     const changes = await resolveMediaDependentChanges({
       mediaId: id,
+      mediaSlug: collection.slug,
       payload: req.payload,
       locales,
       operation: 'update',
