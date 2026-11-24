@@ -3,15 +3,16 @@ import type { Payload } from 'payload'
 import { hasLocaleData, type RevalidationChange, toTypedLocale } from '../lifecycle/helpers.js'
 import {
   type CollectionMediaRef,
+  discoverMediaReferences,
   type GlobalMediaRef,
   getAtPath,
-  MEDIA_REFERENCES,
   mediaIdsEqual,
   resolveMediaId,
 } from './media-references.js'
 
 type ResolveArgs = {
   mediaId: number | string
+  mediaSlug: string
   payload: Payload
   locales: string[]
   operation?: RevalidationChange['operation']
@@ -137,6 +138,7 @@ const resolveGlobalDependents = async ({
  */
 export const resolveMediaDependentChanges = async ({
   mediaId,
+  mediaSlug,
   payload,
   locales,
   operation = 'update',
@@ -144,7 +146,7 @@ export const resolveMediaDependentChanges = async ({
   if (!locales.length) return []
 
   const batches = await Promise.all(
-    MEDIA_REFERENCES.map((ref) => {
+    discoverMediaReferences(payload.config, mediaSlug).map((ref) => {
       if (ref.type === 'collection') {
         return resolveCollectionDependents({
           ref,

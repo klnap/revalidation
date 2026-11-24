@@ -12,7 +12,7 @@ CMS (producer)  ──▶  dispatcher (HTTP)  ──▶  Next.js route (consumer
 | Producer | Emits an event when content changes | Payload CMS |
 | Dispatcher | Delivers events to a consumer | HTTP |
 
-Use the consumer alone, or add the Payload producer to get automatic events.
+Use the consumer alone, or add the Payload producer to get automatic events, including [revalidation of the pages that use a changed media file](#media-dependent-revalidation).
 
 ## Install
 
@@ -139,7 +139,27 @@ custom: {
 
 `identifier` accepts one field path or a list of field paths. Without it, the document slug is used as the route identifier. `enabled: false` opts a schema item out. Excluded fields are omitted when comparing snapshots; schema-level settings override plugin per-slug settings, which override plugin-wide `excludeFields`.
 
-The producer can also revalidate documents that reference changed media. Set the optional `media` collection override when automatic selection is ambiguous. Media reference paths are package-defined; host config cannot register new paths.
+### Media-dependent revalidation
+
+Replace or edit an image and every page that uses it stays stale, because only the media document changed. The producer closes that gap: when a file in your upload collection is updated or deleted, it finds the documents that reference it and emits update events for them, so the consumer expires their cache like after a normal edit.
+
+- **Automatic.** It reads your upload fields (`upload` or `relationship` fields pointing at the media collection) from the Payload config, including those inside rows, groups, named tabs and arrays, and `hasMany` fields. There is no registry to maintain: add an upload field and it is covered.
+- **Opt-in per document type.** Only collections and globals that set `custom.revalidation` are searched, so you control which events are emitted.
+- **Published content only.** For collections with drafts, only published documents are revalidated. A delete revalidates every dependent, before the media row is removed.
+- **Locale-aware.** Only the locales whose media data actually changed are revalidated. `excludeFields` (for example `['alt']`) ignores fields that do not affect output.
+- **Deduplicated.** A document that references the file through several fields produces one event per locale.
+
+The upload collection is detected automatically (the only upload collection, or the one with slug `media`). Override it, or exclude fields, with the `media` option:
+
+```ts
+revalidation({
+  dispatcher: http(),
+  target,
+  media: { collection: mediaCollection, excludeFields: ['alt'] },
+});
+```
+
+Blocks and relationships that allow several collections are not followed. In globals, upload fields inside arrays and `hasMany` uploads are skipped.
 
 ## Dispatcher: HTTP
 
