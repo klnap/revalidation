@@ -37,11 +37,14 @@ export type {
   CompiledLayerRule,
 } from './compiled-host-types.js'
 
-export type CompileHostResult = {
+export type CompileHostResult<
+  TTags extends Record<string, TagTemplate>,
+  TPaths extends Record<string, PathTemplate>,
+> = {
   config: NextRevalidationHandlerConfig
   runtime: CompiledHostRuntime
-  tags: BuiltTags<Record<string, TagTemplate>>
-  paths: BuiltPaths<Record<string, PathTemplate>>
+  tags: BuiltTags<TTags>
+  paths: BuiltPaths<TPaths>
 }
 
 const isPayloadSchema = (schema: v.GenericSchema): boolean =>
@@ -199,18 +202,27 @@ const validateRule = (
 }
 
 export const compileHostRevalidation = <
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate>,
-  TSource extends string,
+  TTags extends Record<string, TagTemplate> = {},
+  TPaths extends Record<string, PathTemplate> = {},
+  TSource extends string = string,
 >(
   input: DefineRevalidationInput<TTags, TPaths, TSource>,
-): CompileHostResult => {
-  const builtTags = buildTagDefs(input.tags)
-  const builtPaths = input.paths
-    ? buildPathDefs(input.paths)
-    : ({} as BuiltPaths<Record<string, PathTemplate>>)
+): CompileHostResult<TTags, TPaths> => {
+  const tagsInput = input.tags ?? ({} as TTags)
+  const pathsInput = input.paths ?? ({} as TPaths)
+  if (!Object.keys(tagsInput).length && !Object.keys(pathsInput).length) {
+    throw new CacheConfigurationError('defineRevalidation requires at least one tag or path')
+  }
+
+  const builtTags = buildTagDefs(tagsInput)
+  const builtPaths = buildPathDefs(pathsInput)
+  const normalizedInput = {
+    ...input,
+    tags: tagsInput,
+    paths: pathsInput,
+  } as DefineRevalidationInput<TTags, TPaths, TSource>
   const full = normalizeHostInput(
-    input,
+    normalizedInput,
     builtTags as BuiltTags<Record<string, TagTemplate>>,
     builtPaths as BuiltPaths<Record<string, PathTemplate>>,
   )
@@ -219,8 +231,8 @@ export const compileHostRevalidation = <
     builtPaths as BuiltPaths<Record<string, PathTemplate>>,
   )
 
-  const tagIds = new Set(Object.keys(full.tags))
-  const pathIds = new Set(full.paths ? Object.keys(full.paths) : [])
+  const tagIds = new Set(Object.keys(tagsInput))
+  const pathIds = new Set(Object.keys(pathsInput))
   const sourceNames = new Set(Object.keys(full.sources))
 
   const layersFn = full.layers as HostLayersInput<
@@ -228,10 +240,10 @@ export const compileHostRevalidation = <
     Record<string, PathTemplate>,
     string
   >
-  const layersInput = layersFn(
-    builtTags as BuiltTags<Record<string, TagTemplate>>,
-    builtPaths as BuiltPaths<Record<string, PathTemplate>>,
-  )
+  const layersInput = layersFn({
+    tags: builtTags as BuiltTags<Record<string, TagTemplate>>,
+    paths: builtPaths as BuiltPaths<Record<string, PathTemplate>>,
+  })
   const rulesByLayer: Record<string, CompiledLayerRule[]> = {}
 
   for (const [layerName, rules] of Object.entries(layersInput)) {
@@ -290,7 +302,7 @@ export const compileHostRevalidation = <
   return {
     config,
     runtime,
-    tags: builtTags as BuiltTags<Record<string, TagTemplate>>,
-    paths: builtPaths as BuiltPaths<Record<string, PathTemplate>>,
+    tags: builtTags as BuiltTags<TTags>,
+    paths: builtPaths as BuiltPaths<TPaths>,
   }
 }

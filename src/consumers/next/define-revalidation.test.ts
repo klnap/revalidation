@@ -1,118 +1,71 @@
-import { afterEach, describe, expect, it } from 'bun:test'
-import { payloadRevalidationItemSchema } from '../../sources/payload'
-import {
-  type DefineRevalidationTagsInput,
-  defineRevalidation,
-  defineRevalidationTags,
-  getDefinedRevalidation,
-  resetDefinedRevalidation,
-} from './define-revalidation.ts'
-import type { DefineRevalidationInput } from './host-types.ts'
+import { describe, expect, it } from 'bun:test'
+import { defineRevalidation, invalidKey } from './index.js'
 
-const baseHost = {
-  secret: 'shared-secret',
-  tags: { homePage: '[locale]:home-page' },
-  sources: {
-    payload: {
-      schema: payloadRevalidationItemSchema,
-      resolve: () => 'home-page',
-    },
-  },
-  layers: (t) => ({
-    next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
-  }),
-} satisfies DefineRevalidationInput<{ homePage: string }, Record<string, never>, 'payload'>
-
-afterEach(() => {
-  resetDefinedRevalidation()
-})
-
-describe('defineRevalidation', () => {
-  it('registers and returns tags', () => {
-    const { tags } = defineRevalidation(baseHost)
-    expect(tags.homePage({ locale: 'en' })).toBe('en:home-page')
-    expect(getDefinedRevalidation().secret).toBe('shared-secret')
-    expect(getDefinedRevalidation().host).toBeDefined()
+const makeConfig = (secret: string) =>
+  defineRevalidation({
+    secret,
+    tags: { home: '[locale]:home', navigation: 'navigation' },
+    paths: { home: '/[locale]' },
+    resolve: (event) => event.key ?? invalidKey(),
+    rules: ({ tags, paths }) => ({
+      home: { tags: [tags.home], paths: [paths.home] },
+      navigation: [tags.navigation],
+    }),
   })
 
-  it('builds static tags without parameters', () => {
-    const { tags } = defineRevalidation({
-      secret: 'shared-secret',
+const request = (secret: string) =>
+  new Request('http://localhost/api/revalidate', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      source: 'webhook',
+      data: { key: 'unmatched' },
+    }),
+  })
+
+describe('defineRevalidation', () => {
+  it('returns parameterized tags, paths, and a bound POST handler', async () => {
+    const { tags, paths, POST } = makeConfig('first-secret')
+
+    expect(tags.home({ locale: 'en' })).toBe('en:home')
+    expect(tags.navigation()).toBe('navigation')
+    expect(paths.home({ locale: 'en' })).toBe('/en')
+    expect((await POST(request('first-secret'))).status).toBe(200)
+  })
+
+  it('creates independent handlers without shared configuration state', async () => {
+    const first = makeConfig('first-secret')
+    const second = makeConfig('second-secret')
+
+    expect((await first.POST(request('first-secret'))).status).toBe(200)
+    expect((await first.POST(request('second-secret'))).status).toBe(401)
+    expect((await second.POST(request('second-secret'))).status).toBe(200)
+    expect((await second.POST(request('first-secret'))).status).toBe(401)
+  })
+
+  it('supports paths without tags', () => {
+    const { paths } = defineRevalidation({
+      secret: 'secret',
+      paths: { home: '/[locale]' },
+      resolve: () => 'home',
+      rules: ({ paths }) => ({ home: { paths: [paths.home] } }),
+    })
+
+    expect(paths.home({ locale: 'en' })).toBe('/en')
+  })
+
+  it('supports tags without paths', () => {
+    const { tags, paths } = defineRevalidation({
+      secret: 'secret',
       tags: { navigation: 'navigation' },
       resolve: () => 'navigation',
-      invalidate: (cacheTags) => ({ navigation: [cacheTags.navigation] }),
+      rules: ({ tags }) => ({ navigation: [tags.navigation] }),
     })
 
     expect(tags.navigation()).toBe('navigation')
-  })
-
-  it('allows repeat defineRevalidation with same secret in dev', () => {
-    defineRevalidation(baseHost)
-    defineRevalidation(baseHost)
-    expect(getDefinedRevalidation().secret).toBe('shared-secret')
-  })
-
-  it('rejects different secret on second call', () => {
-    defineRevalidation(baseHost)
-    expect(() => defineRevalidation({ ...baseHost, secret: 'other-secret' })).toThrow(
-      /different secret/,
-    )
-  })
-
-  it('rejects a different production config with the same secret', () => {
-    const env = process.env as Record<string, string | undefined>
-    const previousNodeEnv = env.NODE_ENV
-    env.NODE_ENV = 'production'
-    try {
-      defineRevalidation(baseHost)
-      expect(() => defineRevalidation(baseHost)).not.toThrow()
-      expect(() =>
-        defineRevalidation({
-          secret: 'shared-secret',
-          tags: { newsPage: 'news-page' },
-          resolve: () => 'news',
-          invalidate: (cacheTags) => ({ pages: [cacheTags.newsPage] }),
-        }),
-      ).toThrow('defineRevalidation: already called in production with a different config')
-    } finally {
-      if (previousNodeEnv === undefined) delete env.NODE_ENV
-      else env.NODE_ENV = previousNodeEnv
-    }
-  })
-})
-
-describe('defineRevalidationTags', () => {
-  it('builds tags without a secret and without registering a handler config', () => {
-    const { tags } = defineRevalidationTags({
-      tags: { homePage: '[locale]:home-page' },
-      sources: baseHost.sources,
-      layers: baseHost.layers,
-    } as unknown as DefineRevalidationTagsInput<
-      { homePage: string },
-      Record<string, never>,
-      'payload'
-    >)
-    expect(tags.homePage({ locale: 'en' })).toBe('en:home-page')
-    expect(() => getDefinedRevalidation()).toThrow('defineRevalidation must be called')
-  })
-
-  it('does not weaken defineRevalidation: a missing secret still throws', () => {
-    expect(() =>
-      defineRevalidation({ ...baseHost, secret: '' } as unknown as DefineRevalidationInput),
-    ).toThrow('defineRevalidation: secret is required')
-  })
-
-  it('leaves no registered secret behind, so a later defineRevalidation registers the real one', () => {
-    defineRevalidationTags({
-      tags: { homePage: '[locale]:home-page' },
-      sources: baseHost.sources,
-      layers: baseHost.layers,
-    } as unknown as DefineRevalidationTagsInput<
-      { homePage: string },
-      Record<string, never>,
-      'payload'
-    >)
-    defineRevalidation(baseHost)
-    expect(getDefinedRevalidation().secret).toBe('shared-secret')
+    expect(paths).toEqual({})
   })
 })

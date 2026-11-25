@@ -5,7 +5,7 @@ const { tags } = defineRevalidation({
   secret: 's',
   tags: { page: '[locale]:page:[slug]', home: '[locale]:home', navigation: 'navigation' },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (t) => ({ pages: [t.page] }),
+  rules: ({ tags: t }) => ({ pages: [t.page] }),
 })
 
 // Positive: declared names and well-typed parameters compile.

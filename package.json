@@ -1,7 +1,7 @@
 {
   "name": "@klnap/revalidation",
   "version": "0.2.2",
-  "description": "Declarative, type-safe cache revalidation.",
+  "description": "Declarative, type-safe cache revalidation for Next.js and Payload CMS.",
   "keywords": [
     "revalidation",
     "cache",

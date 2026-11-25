@@ -62,7 +62,7 @@ describe('revalidation debug logging', () => {
         project: '[locale]:project:[slug]',
       },
       resolve: ({ item }) => (item as { key: string }).key,
-      invalidate: (tag) => ({
+      rules: ({ tags: tag }) => ({
         projects: [tag.project],
       }),
     })
@@ -104,7 +104,7 @@ describe('revalidation debug logging', () => {
           resolve: () => 'home-page',
         },
       },
-      layers: (t) => ({
+      layers: ({ tags: t }) => ({
         next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
       }),
     })

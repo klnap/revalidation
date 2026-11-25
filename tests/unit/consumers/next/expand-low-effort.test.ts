@@ -9,7 +9,7 @@ const payloadWire = {
     event.collection ?? event.global ?? '',
 }
 
-describe('low-effort invalidates', () => {
+describe('simple rules', () => {
   const manual = () =>
     compileHostRevalidation({
       secret: 's',
@@ -26,7 +26,7 @@ describe('low-effort invalidates', () => {
           },
         },
       },
-      layers: (t, _p) => ({
+      layers: ({ tags: t, paths: _p }) => ({
         next: [
           {
             key: { payload: 'projects' },
@@ -44,12 +44,12 @@ describe('low-effort invalidates', () => {
         project: '[locale]:project:[slug]',
         workPage: '[locale]:work-page',
       },
-      invalidate: (tag) => ({
+      rules: ({ tags: tag }) => ({
         projects: [tag.project, tag.workPage],
       }),
     })
 
-  it('flat invalidates expands to next layer', () => {
+  it('a flat rules map expands to the Next.js layer', () => {
     const envelope = {
       source: 'payload',
       data: {
@@ -70,16 +70,16 @@ describe('low-effort invalidates', () => {
     )
   })
 
-  it('invalidates.layers supports custom layer', () => {
+  it('rules.layers supports custom cache layers', () => {
     const { runtime } = compileHostRevalidation({
       secret: 's',
       ...payloadWire,
       tags: { homePage: '[locale]:home' },
       paths: { homePath: '/[locale]' },
-      invalidate: {
+      rules: {
         layers: {
-          next: (tag, _p) => ({ 'home-page': [tag.homePage] }),
-          cdn: (_tag, p) => ({ 'home-page': { paths: [p!.homePath] } }),
+          next: ({ tags }) => ({ 'home-page': [tags.homePage] }),
+          cdn: ({ paths }) => ({ 'home-page': { paths: [paths.homePath] } }),
         },
       },
     })
@@ -98,7 +98,7 @@ describe('low-effort invalidates', () => {
     expect(result.layers.cdn?.paths.map((p) => p.value)).toEqual(['/en'])
   })
 
-  it('rejects mixing invalidates with sources', () => {
+  it('rejects mixing simple rules with sources', () => {
     expect(() =>
       compileHostRevalidation({
         secret: 's',
@@ -109,10 +109,10 @@ describe('low-effort invalidates', () => {
             resolve: () => 'home-page',
           },
         },
-        invalidate: (tag) => ({ 'home-page': [tag.homePage] }),
+        rules: () => ({ 'home-page': [] }),
         resolve: () => 'home-page',
       }),
-    ).toThrow(/invalidate.*or sources/)
+    ).toThrow(/rules.*or sources/)
   })
 
   it('requires resolve', () => {
@@ -120,9 +120,7 @@ describe('low-effort invalidates', () => {
       compileHostRevalidation({
         secret: 's',
         tags: { homePage: '[locale]:home' },
-        invalidate: (tag: { homePage: (locale: string) => string }) => ({
-          'home-page': [tag.homePage],
-        }),
+        rules: () => ({}),
       } as unknown as import('../../../../src/consumers/next/host-types').DefineRevalidationInput),
     ).toThrow(/resolve/)
   })
@@ -133,15 +131,11 @@ describe('low-effort invalidates', () => {
         secret: 's',
         tags: { homePage: '[locale]:home' },
         layers: {
-          next: (tag: { homePage: (locale: string) => string }) => ({
-            'home-page': [tag.homePage],
-          }),
+          next: () => ({}),
         },
-        invalidate: (tag: { homePage: (locale: string) => string }) => ({
-          'home-page': [tag.homePage],
-        }),
+        rules: () => ({}),
         resolve: () => 'home-page',
       } as unknown as import('../../../../src/consumers/next/host-types').DefineRevalidationInput),
-    ).toThrow(/invalidate only/)
+    ).toThrow(/rules\.layers/)
   })
 })

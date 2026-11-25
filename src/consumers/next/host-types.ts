@@ -82,24 +82,34 @@ export type RevalidateObject = {
 
 export type RevalidateSpec = readonly TagReference[] | RevalidateObject
 
-export type LowEffortLayerMap = Record<string, RevalidateSpec>
+export type RuleMap = Record<string, RevalidateSpec>
 
-export type LowEffortLayerFn<
+export type RevalidationRuleContext<
   TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined = undefined,
-> = (
-  tags: BuiltTags<TTags>,
-  paths?: TPaths extends Record<string, PathTemplate> ? BuiltPaths<TPaths> : undefined,
-) => LowEffortLayerMap
-
-export type LowEffortLayersInput<
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined = undefined,
+  TPaths extends Record<string, PathTemplate>,
 > = {
-  next: LowEffortLayerFn<TTags, TPaths>
-} & {
-  [layerName: string]: LowEffortLayerFn<TTags, TPaths>
+  tags: BuiltTags<TTags>
+  paths: BuiltPaths<TPaths>
 }
+
+export type RuleMapFn<
+  TTags extends Record<string, TagTemplate>,
+  TPaths extends Record<string, PathTemplate>,
+> = (context: RevalidationRuleContext<TTags, TPaths>) => RuleMap
+
+export type RulesLayersInput<
+  TTags extends Record<string, TagTemplate>,
+  TPaths extends Record<string, PathTemplate>,
+> = {
+  next: RuleMapFn<TTags, TPaths>
+} & {
+  [layerName: string]: RuleMapFn<TTags, TPaths>
+}
+
+export type RulesInput<
+  TTags extends Record<string, TagTemplate>,
+  TPaths extends Record<string, PathTemplate>,
+> = RuleMapFn<TTags, TPaths> | { layers: RulesLayersInput<TTags, TPaths> }
 
 export type HostSourceDefinition<TItem = unknown> = {
   schema: v.GenericSchema
@@ -128,17 +138,16 @@ export type HostLayersInput<
   TPaths extends Record<string, PathTemplate>,
   TSource extends string,
 > = (
-  tags: BuiltTags<TTags>,
-  paths: BuiltPaths<TPaths>,
+  context: RevalidationRuleContext<TTags, TPaths>,
 ) => Record<string, readonly HostLayerRule<TSource>[]>
 
 type DefineRevalidationShared<
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate>,
+  TTags extends Record<string, TagTemplate> = {},
+  TPaths extends Record<string, PathTemplate> = {},
 > = {
   secret: string
   mode?: CacheMode
-  tags: TTags
+  tags?: TTags
   paths?: TPaths
   execute?: Record<
     string,
@@ -152,40 +161,31 @@ type DefineRevalidationShared<
 }
 
 export type DefineRevalidationInputFull<
-  TTags extends Record<string, TagTemplate> = Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
+  TTags extends Record<string, TagTemplate> = {},
+  TPaths extends Record<string, PathTemplate> = {},
   TSource extends string = string,
 > = DefineRevalidationShared<TTags, TPaths> & {
   sources: Record<TSource, HostSourceDefinition>
   layers: HostLayersInput<TTags, TPaths, TSource>
 }
 
-/** Flat cacheKey map → implied `next` layer, or explicit `layers` for next / CDN / custom. */
-export type LowEffortInvalidateInput<
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined = undefined,
-> = LowEffortLayerFn<TTags, TPaths> | { layers: LowEffortLayersInput<TTags, TPaths> }
-
-export type DefineRevalidationInputLowEffort<
-  TTags extends Record<string, TagTemplate> = Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined = undefined,
-> = DefineRevalidationShared<
-  TTags,
-  TPaths extends Record<string, PathTemplate> ? TPaths : Record<string, never>
-> & {
+export type DefineRevalidationInputRules<
+  TTags extends Record<string, TagTemplate> = {},
+  TPaths extends Record<string, PathTemplate> = {},
+> = DefineRevalidationShared<TTags, TPaths> & {
   /**
-   * Host maps flattened wire fields → cache keys in `invalidate` (required).
+   * Maps producer-specific event data to application rule keys.
    * Unknown / empty keys are skipped on POST (logged, no app crash).
    */
   resolve: (event: RevalidationEvent) => string
   params?: (event: RevalidationEvent) => TagParamsBag
-  invalidate: LowEffortInvalidateInput<TTags, TPaths>
+  rules: RulesInput<TTags, TPaths>
 }
 
 export type DefineRevalidationInput<
-  TTags extends Record<string, TagTemplate> = Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> = Record<string, PathTemplate>,
+  TTags extends Record<string, TagTemplate> = {},
+  TPaths extends Record<string, PathTemplate> = {},
   TSource extends string = string,
 > =
   | DefineRevalidationInputFull<TTags, TPaths, TSource>
-  | DefineRevalidationInputLowEffort<TTags, TPaths | undefined>
+  | DefineRevalidationInputRules<TTags, TPaths>

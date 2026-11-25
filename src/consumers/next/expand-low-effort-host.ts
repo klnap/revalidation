@@ -3,102 +3,64 @@ import type {
   BuiltPaths,
   BuiltTags,
   DefineRevalidationInputFull,
-  DefineRevalidationInputLowEffort,
+  DefineRevalidationInputRules,
   HostLayerRule,
-  LowEffortLayerFn,
-  LowEffortLayerMap,
   PathTemplate,
+  RuleMap,
+  RulesInput,
   TagTemplate,
 } from './host-types.js'
 import { passthroughWireItemSchema } from './passthrough-wire-item-schema.js'
 
-/** Internal: low-effort rules + wire handler apply to any CMS `envelope.source` label. */
+/** Internal: simple rules + wire handler apply to any CMS `envelope.source` label. */
 const LOW_EFFORT_ANY_SOURCE = '*'
 
-type LowEffortLayerFnRuntime = (
+type RuleMapFnRuntime = (context: {
+  tags: BuiltTags<Record<string, TagTemplate>>
+  paths: BuiltPaths<Record<string, PathTemplate>>
+}) => RuleMap
+
+const callRuleMap = (
+  fn: RuleMapFnRuntime,
   tags: BuiltTags<Record<string, TagTemplate>>,
-  paths?: BuiltPaths<Record<string, PathTemplate>>,
-) => LowEffortLayerMap
+  paths: BuiltPaths<Record<string, PathTemplate>>,
+): RuleMap => fn({ tags, paths })
 
-const callLowEffortLayer = (
-  fn: LowEffortLayerFn<Record<string, TagTemplate>, Record<string, PathTemplate> | undefined>,
-  builtTags: BuiltTags<Record<string, TagTemplate>>,
-  builtPaths: BuiltPaths<Record<string, PathTemplate>>,
-  hasPaths: boolean,
-): LowEffortLayerMap => {
-  const runtime = fn as LowEffortLayerFnRuntime
-  return hasPaths ? runtime(builtTags, builtPaths) : runtime(builtTags)
-}
-
-const resolveLowEffortLayerMaps = <
+const resolveRuleMaps = <
   TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined,
+  TPaths extends Record<string, PathTemplate>,
 >(
-  input: DefineRevalidationInputLowEffort<TTags, TPaths>,
+  input: DefineRevalidationInputRules<TTags, TPaths>,
   builtTags: BuiltTags<Record<string, TagTemplate>>,
   builtPaths: BuiltPaths<Record<string, PathTemplate>>,
-  hasPaths: boolean,
-) => {
-  const invalidate = input.invalidate
-  if (!invalidate) {
-    throw new CacheConfigurationError('invalidate is required (cache key → tag rules)')
+): Record<string, RuleMap> => {
+  const rules = input.rules as RulesInput<Record<string, TagTemplate>, Record<string, PathTemplate>>
+  if (typeof rules === 'function') {
+    return { next: callRuleMap(rules, builtTags, builtPaths) }
   }
 
-  if (typeof invalidate === 'function') {
-    return {
-      next: callLowEffortLayer(
-        invalidate as LowEffortLayerFn<
-          Record<string, TagTemplate>,
-          Record<string, PathTemplate> | undefined
-        >,
-        builtTags,
-        builtPaths,
-        hasPaths,
-      ),
-    }
-  }
-
-  const maps: Record<string, LowEffortLayerMap> = {}
-  for (const [layerName, layerFn] of Object.entries(invalidate.layers)) {
-    maps[layerName] = callLowEffortLayer(
-      layerFn as LowEffortLayerFn<
-        Record<string, TagTemplate>,
-        Record<string, PathTemplate> | undefined
-      >,
-      builtTags,
-      builtPaths,
-      hasPaths,
-    )
+  const maps: Record<string, RuleMap> = {}
+  for (const [layerName, layerFn] of Object.entries(rules.layers)) {
+    maps[layerName] = callRuleMap(layerFn, builtTags, builtPaths)
   }
   return maps
 }
 
 export const expandLowEffortHost = <
   TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate> | undefined,
+  TPaths extends Record<string, PathTemplate>,
 >(
-  input: DefineRevalidationInputLowEffort<TTags, TPaths>,
+  input: DefineRevalidationInputRules<TTags, TPaths>,
   builtTags: BuiltTags<Record<string, TagTemplate>>,
   builtPaths: BuiltPaths<Record<string, PathTemplate>>,
-): DefineRevalidationInputFull<
-  TTags,
-  TPaths extends Record<string, PathTemplate> ? TPaths : Record<string, never>,
-  string
-> => {
+): DefineRevalidationInputFull<TTags, TPaths, string> => {
   if (!input.resolve) {
     throw new CacheConfigurationError(
-      'resolve is required — map wire items to invalidate cache keys',
+      'resolve is required — map producer events to application rule keys',
     )
   }
-  const hasPaths = Boolean(input.paths && Object.keys(input.paths).length > 0)
 
-  const layerMaps = resolveLowEffortLayerMaps(
-    input,
-    builtTags as BuiltTags<Record<string, TagTemplate>>,
-    builtPaths,
-    hasPaths,
-  )
-
+  const layerMaps = resolveRuleMaps(input, builtTags, builtPaths)
   const layersByName: Record<string, HostLayerRule<string>[]> = {}
 
   for (const [layerName, cacheKeyRules] of Object.entries(layerMaps)) {
@@ -114,22 +76,20 @@ export const expandLowEffortHost = <
 
   if (!layersByName.next?.length) {
     throw new CacheConfigurationError(
-      'invalidate: include at least one cache key rule (flat map or invalidate.layers.next)',
+      'rules: include at least one resolved-key rule (flat map or rules.layers.next)',
     )
   }
-
-  const optionalParams = input.params
 
   return {
     secret: input.secret,
     mode: input.mode,
-    tags: input.tags,
-    paths: input.paths,
+    tags: input.tags ?? ({} as TTags),
+    paths: input.paths ?? ({} as TPaths),
     sources: {
       [LOW_EFFORT_ANY_SOURCE]: {
         schema: passthroughWireItemSchema,
         resolve: input.resolve,
-        ...(optionalParams ? { params: optionalParams } : undefined),
+        ...(input.params ? { params: input.params } : undefined),
       },
     },
     layers: () => layersByName,

@@ -13,7 +13,7 @@ describe('HTTP producer → Next consumer', () => {
       secret: 'shared-secret',
       tags: { page: '[locale]:page' },
       resolve: ({ item }) => (item as { key: string }).key,
-      invalidate: (t) => ({ pages: [t.page] }),
+      rules: ({ tags: t }) => ({ pages: [t.page] }),
       execute: {
         next: async ({ tags }) => {
           invalidated.push(...tags.map((entry) => entry.value))

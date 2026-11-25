@@ -27,11 +27,9 @@ const publicExports = {
   ],
   './consumers/next': [
     'InvalidKeyError',
-    'POST',
     'createCache',
     'createRevalidationHandler',
     'defineRevalidation',
-    'defineRevalidationTags',
     'invalidKey',
   ],
   './dispatchers': ['http', 'normalizeTargets', 'resolveRevalidationTargets'],
@@ -61,8 +59,10 @@ describe('package export subpaths', () => {
     expect(mod).not.toHaveProperty('payloadJobs')
   })
 
-  it('does not expose the consumer test registry reset', async () => {
+  it('does not expose an unbound route handler or module registry', async () => {
     const mod = await import('@klnap/revalidation/consumers/next')
+    expect(mod).not.toHaveProperty('POST')
+    expect(mod).not.toHaveProperty('getDefinedRevalidation')
     expect(mod).not.toHaveProperty('resetDefinedRevalidation')
   })
 })

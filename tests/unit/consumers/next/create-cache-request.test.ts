@@ -14,7 +14,7 @@ const handlerFor = (overrides: Record<string, unknown> = {}) => {
         resolve: () => 'home-page',
       },
     },
-    layers: (t) => ({
+    layers: ({ tags: t }) => ({
       next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
     }),
   })

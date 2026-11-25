@@ -28,7 +28,7 @@ npm install --no-audit --no-fund \
 cat > smoke.mjs <<'JS'
 import assert from 'node:assert/strict'
 import { createPipeline } from '@klnap/revalidation'
-import { POST, defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next'
+import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next'
 import { http } from '@klnap/revalidation/dispatchers/http'
 import { revalidation } from '@klnap/revalidation/producers/payload'
 import { payloadRevalidationSource } from '@klnap/revalidation/sources/payload'
@@ -36,18 +36,18 @@ import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { buildConfig, getPayload } from 'payload'
 
 assert.equal(typeof createPipeline, 'function')
-assert.equal(typeof POST, 'function')
 assert.equal(typeof defineRevalidation, 'function')
 assert.equal(typeof http, 'function')
 assert.equal(typeof payloadRevalidationSource, 'function')
 
 // Quick start declarations from the packed package: tag strings match the events they invalidate.
-const { tags } = defineRevalidation({
+const { tags, POST } = defineRevalidation({
   secret: 'smoke-secret',
   tags: { page: '[locale]:page:[slug]', siteSettings: '[locale]:site-settings' },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (t) => ({ pages: [t.page], 'site-settings': [t.siteSettings] }),
+  rules: ({ tags }) => ({ pages: [tags.page], 'site-settings': [tags.siteSettings] }),
 })
+assert.equal(typeof POST, 'function')
 assert.equal(tags.page({ locale: 'en', slug: 'about' }), 'en:page:about')
 assert.equal(tags.siteSettings({ locale: 'en' }), 'en:site-settings')
 assert.throws(() => tags.page({ locale: 'en' }), /missing param\(s\): slug/)

@@ -39,7 +39,7 @@ export const { tags } = defineRevalidation({
       resolve: ({ item }) => (item as { key: string }).key,
     },
   },
-  layers: (tags) => ({
+  layers: ({ tags }) => ({
     next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
   }),
 });
@@ -63,18 +63,18 @@ The consumer returns `200` and invalidates the `pricing` tag.
 - `prepare` (optional): returns extra fields that are merged into the item before `resolve`.
 - `params` (optional): returns the template parameters for tags and paths.
 
-`valibot` must be installed in the consumer application.
+Add `valibot` as a direct dependency when your application imports its schema API.
 
 ## Simple form
 
-Without `sources`, `invalidate` accepts any source name:
+Without `sources`, the simple `rules` form accepts any source name:
 
 ```ts
 defineRevalidation({
   secret,
   tags: { pricing: 'pricing' },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (t) => ({ pricing: [t.pricing] }),
+  rules: ({ tags }) => ({ pricing: [tags.pricing] }),
 });
 ```
 

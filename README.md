@@ -1,60 +1,17 @@
 # @klnap/revalidation
 
-Declarative, type-safe cache revalidation.
+Declarative, type-safe cache revalidation for Next.js and Payload CMS.
 
-Define cache tags once, reuse them throughout your application, and declaratively control when they are invalidated.
+Declare cache tags and paths once, then use typed helpers both when caching data and when mapping producer events to revalidation rules.
 
-Built on an extensible, event-driven architecture with native integrations for Next.js and Payload CMS.
+## Requirements
 
-The generated helpers make cached functions and invalidation rules share the same tag declaration:
+- Node.js `^22.23.5 || ^24.22.3 || >=26.13.1`
+- TypeScript `>=5.0`
+- Next.js `>=16.4.5 <17` for the Next.js consumer
+- Payload `>=3.94.1 <4` for the Payload producer
 
-```ts
-// src/revalidation.ts
-import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
-
-export const { tags } = defineRevalidation({
-  secret: process.env.REVALIDATION_SECRET!,
-  tags: {
-    page: '[locale]:page:[slug]',
-    siteSettings: '[locale]:site-settings',
-  },
-  resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (cacheTags) => ({
-    pages: [cacheTags.page],
-    'site-settings': [cacheTags.siteSettings],
-  }),
-});
-```
-
-```ts
-// src/lib/articles.ts
-import { cacheTag } from 'next/cache';
-import { tags } from '@/revalidation';
-
-export async function getPage(locale: string, slug: string) {
-  'use cache';
-  cacheTag(tags.page({ locale, slug }));
-  // Load the page.
-}
-```
-
-`tags.page({ locale, slug })` builds the tag in ordinary server-side code. The `pages` rule uses the same helper declaration when a matching event arrives. TypeScript checks declared tag names, required template parameters, and string parameter values; it does not guarantee event delivery or cache freshness. See [cache tags](docs/concepts/cache-tags.md).
-
-## Why revalidation
-
-Cache tags are strings. Duplicating them across cached functions and invalidation rules lets names drift. A missing or misspelled tag can leave an entry untouched without an error. This package generates typed helpers from one declaration and lets event rules reference those same declarations.
-
-## Key features
-
-- Declare parameterized and static tags once, then import generated helpers into server-side application code.
-- Define rules that map event keys to tags and paths.
-- Use independent consumers, producers, sources, and dispatchers.
-- Receive Payload collection and global events with change detection, localization, and draft handling.
-- Revalidate documents that depend on changed media.
-- Add custom event sources and cache layers, including caches alongside Next.js.
-- Bound and authenticate the built-in HTTP consumer and dispatcher.
-
-## Installation and compatibility
+Install with Bun or npm:
 
 ```sh
 bun add @klnap/revalidation
@@ -62,67 +19,54 @@ bun add @klnap/revalidation
 npm install @klnap/revalidation
 ```
 
-Requirements:
-
-- Node.js `^22.23.5 || ^24.22.3 || >=26.13.1`
-- TypeScript `>=5.0` for TypeScript consumers
-- Next.js `>=16.4.5 <17` for the optional Next.js consumer
-- Payload `>=3.94.1 <4` for the optional Payload producer
-
-The core and HTTP dispatcher do not require either framework. If your application imports Valibot schemas for a custom source, add `valibot` as a direct dependency.
+The core and HTTP dispatcher do not require Next.js or Payload. If your application imports Valibot schemas for a custom source, add `valibot` as a direct dependency.
 
 ## Quick start
 
-This example uses Next.js 16 Cache Components and a Payload `pages` collection with a required `slug` field. The Next.js consumer also works without Payload; any producer can send a compatible event.
+This example uses a multilingual Next.js app with Payload pages. Payload sends each page event with `key: "pages"`, its locale, and its slug.
 
-**1. Configure the shared secret and URL.** Keep the same secret in both server environments.
-
-```sh
-# Next.js .env.local
-REVALIDATION_SECRET=replace-with-a-long-random-value
-
-# Payload .env
-REVALIDATION_SECRET=replace-with-a-long-random-value
-REVALIDATION_URL=http://localhost:3000/api/revalidate
-```
-
-**2. Enable Cache Components in Next.js.**
+Enable Cache Components:
 
 ```ts
 // next.config.ts
 import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
-  cacheComponents: true,
-};
-
+const nextConfig: NextConfig = { cacheComponents: true };
 export default nextConfig;
 ```
 
-**3. Declare the tags and invalidation rules.** The `resolve` callback must return a key; use `invalidKey()` when the event has no valid key. Rules use the producer's event key, which is the collection or global slug for Payload.
+Declare tags, paths, event resolution, and rules in one server-only module:
 
 ```ts
 // src/revalidation.ts
+import 'server-only';
 import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
 
-export const { tags } = defineRevalidation({
+export const { tags, paths, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  tags: {
-    page: '[locale]:page:[slug]',
-    siteSettings: '[locale]:site-settings',
-  },
+  mode: 'expire',
+  tags: { page: '[locale]:page:[slug]' },
+  paths: { page: '/[locale]/[slug]' },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (cacheTags) => ({
-    pages: [cacheTags.page],
-    'site-settings': [cacheTags.siteSettings],
+  rules: ({ tags, paths }) => ({
+    pages: { tags: [tags.page], paths: [paths.page] },
   }),
 });
 ```
 
-**4. Use the exported helpers in cached server functions.**
+The rule key, `pages`, must match the key returned by `resolve`. When an event resolves to `pages`, the rule builds both cache targets using that event's locale and slug. `invalidKey()` skips an item that has no valid rule key.
+
+Re-export the configuration-bound handler from a Route Handler:
 
 ```ts
-// src/lib/content.ts
+// src/app/api/revalidate/route.ts
+export { POST } from '@/revalidation';
+```
+
+Use the same tag helper when caching the page:
+
+```ts
+// src/lib/pages.ts
 import { cacheTag } from 'next/cache';
 import { tags } from '@/revalidation';
 
@@ -131,24 +75,9 @@ export async function getPage(locale: string, slug: string) {
   cacheTag(tags.page({ locale, slug }));
   // Load the page.
 }
-
-export async function getSiteSettings(locale: string) {
-  'use cache';
-  cacheTag(tags.siteSettings({ locale }));
-  // Load the settings.
-}
 ```
 
-**5. Register the declarations and expose the Route Handler.** Import the declaration module from the route so both use the same server module graph. Keep this module out of client components.
-
-```ts
-// src/app/api/revalidate/route.ts
-import '@/revalidation';
-
-export { POST } from '@klnap/revalidation/consumers/next';
-```
-
-**6. Configure Payload and opt in the content that should emit events.**
+Configure Payload to send events to the Route Handler:
 
 ```ts
 // payload.config.ts (database and admin options omitted)
@@ -157,21 +86,18 @@ import { revalidation } from '@klnap/revalidation/producers/payload';
 import { buildConfig } from 'payload';
 
 export default buildConfig({
+  localization: {
+    locales: ['en', 'fr'],
+    defaultLocale: 'en',
+  },
   collections: [
     {
       slug: 'pages',
       custom: { revalidation: true },
       fields: [
-        { name: 'title', type: 'text' },
-        { name: 'slug', type: 'text', required: true },
+        { name: 'title', type: 'text', localized: true },
+        { name: 'slug', type: 'text', required: true, localized: true },
       ],
-    },
-  ],
-  globals: [
-    {
-      slug: 'site-settings',
-      custom: { revalidation: true },
-      fields: [{ name: 'siteName', type: 'text' }],
     },
   ],
   plugins: [
@@ -186,41 +112,25 @@ export default buildConfig({
 });
 ```
 
-Payload sends collection events with `key: "pages"` and global events with `key: "site-settings"`. The locale and slug fields supply the template parameters. Events are dispatched after the save hook, not synchronously inside the save request. Delivery is best-effort; see [reliability](docs/reliability.md).
+Set `REVALIDATION_SECRET` in both applications and point `REVALIDATION_URL` at `/api/revalidate`. Payload dispatches events after the save hook; delivery is best-effort. See [reliability](docs/reliability.md).
 
-## Consumers
+## Rules and modes
 
-The Next.js consumer is a Route Handler that validates events, resolves keys, matches rules, and invalidates tags or paths. It can run without Payload. The guide covers standalone setup, explicit handler configuration, module registration, custom sources, and custom cache layers: [Next.js consumer](docs/consumers/next.md).
+Rules map resolved event keys to tags or paths. A rule can use the tag-array shorthand or an object containing `tags`, `paths`, and a per-rule `mode`. The global mode defaults to `expire`; a rule mode overrides it for that rule's tags.
 
-## Producers
+- `expire` expires a tag immediately. The next read waits while Next.js regenerates the entry.
+- `stale` marks a tag stale. The next read may serve stale data while Next.js refreshes it in the background.
+- Paths use `revalidatePath(path)` without a profile; Next.js revalidates the path on its next visit.
 
-Payload is the built-in producer. Opt in collections and globals with `custom.revalidation`; its hooks detect content changes, account for locales and publication state, retain previous identifiers, and track media dependents. Other systems can produce compatible events without using Payload.
+Revalidation does not push an update to an already open page. See the [Next.js consumer guide](docs/consumers/next.md#modes).
 
-- [Payload producer](docs/producers/payload.md)
-- [Media dependency tracking](docs/producers/payload-media-dependencies.md)
+## Other integrations
 
-## Sources
-
-A source defines and validates event items and maps each item to a cache key for the consumer's rules. The built-in source describes Payload's wire format. Custom sources let consumers accept other event shapes: [sources](docs/sources/custom.md).
-
-## Dispatchers
-
-A dispatcher handles delivery from a producer to a consumer. The built-in HTTP dispatcher retries selected failures within a deadline; it does not provide a persistent queue. Other dispatchers can implement the public dispatcher contract: [HTTP dispatcher](docs/dispatchers/http.md).
-
-## Architecture and extensibility
-
-```text
-Producer → Dispatcher → Consumer → Cache layers
-                           └─ Source validation and event-to-key mapping
-```
-
-The framework-independent core defines shared event, source, and dispatcher contracts. The consumer interprets events through sources and rules; the producer and transport are independent choices. See [architecture](docs/concepts/architecture.md) and [extension points](docs/extending.md).
-
-## Reliability and security
-
-- [Reliability](docs/reliability.md): delivery, retries, transaction timing, skipped events, and cache behavior.
-- [Security](docs/security.md): authentication, request limits, transport, and security boundaries.
-- [Troubleshooting](docs/troubleshooting.md): common responses and log messages.
+- [Next.js consumer](docs/consumers/next.md): standalone setup, event resolution, custom parameters, modes, and custom cache layers.
+- [Payload producer](docs/producers/payload.md): collection and global hooks, localization, and change detection.
+- [Custom sources](docs/sources/custom.md): validate other event shapes with the advanced `sources` and `layers` DSL.
+- [HTTP dispatcher](docs/dispatchers/http.md): delivery retries and limits.
+- [Architecture](docs/concepts/architecture.md): producer, dispatcher, consumer, and cache-layer contracts.
 
 ## License
 

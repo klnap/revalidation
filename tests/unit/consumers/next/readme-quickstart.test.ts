@@ -1,54 +1,76 @@
-import { afterEach, describe, expect, it } from 'bun:test'
-import {
-  getDefinedRevalidation,
-  resetDefinedRevalidation,
-} from '../../../../src/consumers/next/define-revalidation'
+import { describe, expect, it } from 'bun:test'
 import { defineRevalidation, invalidKey } from '../../../../src/consumers/next/index'
-import { inspectHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
 
-afterEach(resetDefinedRevalidation)
-
-// Mirrors the declarations in README.md, Quick start step 2.
-const declare = () =>
-  defineRevalidation({
+const run = async (event: unknown) => {
+  const executed: { tags: string[]; paths: string[] }[] = []
+  const { tags, paths, POST } = defineRevalidation({
     secret: 'secret',
     tags: {
       page: '[locale]:page:[slug]',
       siteSettings: '[locale]:site-settings',
     },
-    resolve: (event) => event.key ?? invalidKey(),
-    invalidate: (cacheTags) => ({
-      pages: [cacheTags.page],
+    paths: { page: '/[locale]/[slug]' },
+    resolve: (item) => item.key ?? invalidKey(),
+    rules: ({ tags: cacheTags, paths: cachePaths }) => ({
+      pages: { tags: [cacheTags.page], paths: [cachePaths.page] },
       'site-settings': [cacheTags.siteSettings],
     }),
+    execute: {
+      next: async ({ tags, paths: cachePaths }) => {
+        executed.push({
+          tags: tags.map((tag) => tag.value),
+          paths: cachePaths.map((path) => path.value),
+        })
+      },
+    },
   })
 
-const inspect = (envelope: unknown) => {
-  const host = getDefinedRevalidation().host
-  if (!host) throw new Error('host config missing')
-  return inspectHostEnvelope(host, envelope as never, 'expire', 100)
+  const response = await POST(
+    new Request('http://localhost/api/revalidate', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer secret',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(event),
+    }),
+  )
+
+  return { response, executed, tags, paths }
 }
 
 describe('README quick start', () => {
-  it('a page event expires the tag the cached page function registers', () => {
-    const { tags } = declare()
-    const result = inspect({
+  it('invalidates the same page tag and path registered by the cached function', async () => {
+    const result = await run({
       source: 'payload',
-      data: [
-        { operation: 'update', locale: 'en', key: 'pages', collection: 'pages', slug: 'about' },
-      ],
+      data: {
+        operation: 'update',
+        locale: 'en',
+        key: 'pages',
+        collection: 'pages',
+        slug: 'about',
+      },
     })
-    expect(tags.page({ locale: 'en', slug: 'about' })).toBe('en:page:about')
-    expect(result.layers.next?.tags.map((t) => t.value)).toEqual(['en:page:about'])
+
+    expect(result.response.status).toBe(200)
+    expect(result.tags.page({ locale: 'en', slug: 'about' })).toBe('en:page:about')
+    expect(result.paths.page({ locale: 'en', slug: 'about' })).toBe('/en/about')
+    expect(result.executed).toEqual([{ tags: ['en:page:about'], paths: ['/en/about'] }])
   })
 
-  it('a global event expires the settings tag for its locale', () => {
-    const { tags } = declare()
-    const result = inspect({
+  it('invalidates a localized global settings tag', async () => {
+    const result = await run({
       source: 'payload',
-      data: [{ operation: 'update', locale: 'en', key: 'site-settings', global: 'site-settings' }],
+      data: {
+        operation: 'update',
+        locale: 'en',
+        key: 'site-settings',
+        global: 'site-settings',
+      },
     })
-    expect(tags.siteSettings({ locale: 'en' })).toBe('en:site-settings')
-    expect(result.layers.next?.tags.map((t) => t.value)).toEqual(['en:site-settings'])
+
+    expect(result.response.status).toBe(200)
+    expect(result.tags.siteSettings({ locale: 'en' })).toBe('en:site-settings')
+    expect(result.executed).toEqual([{ tags: ['en:site-settings'], paths: [] }])
   })
 })

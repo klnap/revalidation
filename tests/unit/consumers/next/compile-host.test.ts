@@ -26,7 +26,7 @@ describe('compileHostRevalidation', () => {
           },
         },
       },
-      layers: (t) => ({
+      layers: ({ tags: t }) => ({
         next: [
           {
             key: { payload: 'projects' },
@@ -73,7 +73,7 @@ describe('compileHostRevalidation', () => {
             })(),
         },
       },
-      layers: (t) => ({
+      layers: ({ tags: t }) => ({
         next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
       }),
     })
@@ -114,7 +114,7 @@ describe('compileHostRevalidation', () => {
             resolve: () => 'home-page',
           },
         },
-        layers: (t) => ({
+        layers: ({ tags: t }) => ({
           next: [
             {
               key: { payload: 'home-page' },
@@ -137,7 +137,7 @@ describe('compileHostRevalidation', () => {
       secret: 'foreign',
       tags: { homePage: 'foreign:[locale]:home-page' },
       sources: source,
-      layers: (tags) => ({
+      layers: ({ tags }) => ({
         next: [{ key: { payload: 'home-page' }, invalidates: [tags.homePage] }],
       }),
     }).tags.homePage!
