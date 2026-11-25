@@ -32,7 +32,6 @@ const stripForMediaShared = (
   return sortKeys(out)
 }
 
-/** @deprecated Use excludeFields from CMS/plugin via resolveExcludeFields. */
 export const MEDIA_LOCALIZED_KEYS = new Set(['alt'])
 
 /** True when non-excluded media fields match (file/url/focal/…). */

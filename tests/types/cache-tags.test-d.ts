@@ -24,6 +24,14 @@ defineRevalidation({
   }),
 })
 
+defineRevalidation({
+  secret: 's',
+  resolve: (event) => event.key ?? invalidKey(),
+  // @ts-expect-error — configure current rules through `rules`.
+  invalidate: () => ({}),
+  rules: () => ({}),
+})
+
 const { tags, paths } = defineRevalidation({
   secret: 's',
   mode: 'expire',

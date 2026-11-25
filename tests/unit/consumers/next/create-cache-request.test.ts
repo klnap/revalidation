@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
-import { createCache } from '../../../../src/consumers/next/create-cache'
+import { createRevalidationCache } from '../../../../src/consumers/next/create-cache'
 import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
 
 const handlerFor = (overrides: Record<string, unknown> = {}) => {
@@ -18,7 +18,7 @@ const handlerFor = (overrides: Record<string, unknown> = {}) => {
       next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
     }),
   })
-  return createCache({ ...config, ...overrides })
+  return createRevalidationCache({ ...config, ...overrides })
 }
 
 const post = (authorization: string, body = '{"source":"payload","data":{}}') =>
@@ -28,7 +28,7 @@ const post = (authorization: string, body = '{"source":"payload","data":{}}') =>
     body,
   })
 
-describe('createCache authorization', () => {
+describe('revalidation cache authorization', () => {
   it('rejects a wrong secret of a different length with 401', async () => {
     const response = await handlerFor().route(post('Bearer secret-but-much-longer'))
     expect(response.status).toBe(401)
@@ -50,7 +50,7 @@ describe('createCache authorization', () => {
   })
 })
 
-describe('createCache body size', () => {
+describe('revalidation cache body size', () => {
   it('rejects a declared oversized body before reading it', async () => {
     const request = new Request('http://localhost/api/revalidate', {
       method: 'POST',
@@ -208,7 +208,7 @@ describe('createCache body size', () => {
   })
 })
 
-describe('createCache limits', () => {
+describe('revalidation cache limits', () => {
   it('accepts the hard ceilings', () => {
     expect(() => handlerFor({ maxEvents: 1000, maxBodyBytes: 16 * 1024 * 1024 })).not.toThrow()
   })

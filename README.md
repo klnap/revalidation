@@ -11,6 +11,8 @@ Declare cache tags and paths once, then use typed helpers both when caching data
 - Next.js `>=16.4.5 <17` for the Next.js consumer
 - Payload `>=3.94.1 <4` for the Payload producer
 
+Configure Payload with the database adapter your application uses. The example below uses `@payloadcms/db-sqlite`.
+
 Install with Bun or npm:
 
 ```sh
@@ -42,7 +44,7 @@ Declare cache templates separately from the server-only consumer configuration:
 import { defineRevalidationTags } from '@klnap/revalidation/consumers/next/tags';
 
 export const cacheTargets = {
-  tags: { page: '[locale]:page:[projectSlug]' },
+  tags: { page: '[locale]:page:[projectSlug]', siteSettings: '[locale]:site-settings' },
   paths: { page: '/[locale]/[projectSlug]' },
 } as const;
 
@@ -68,11 +70,12 @@ export const { POST } = defineRevalidation({
   }),
   rules: ({ tags, paths }) => ({
     pages: { tags: [tags.page], paths: [paths.page] },
+    'site-settings': [tags.siteSettings],
   }),
 });
 ```
 
-The rule key, `pages`, must match the key returned by `resolve`. Read it as: “When an event resolves to `pages`, invalidate its localized page tag and path.” `params` maps the producer's `slug` field to the template's `projectSlug` parameter. `invalidKey()` skips an item that has no valid rule key.
+The keys `pages` and `site-settings` must match keys returned by `resolve`. `params` maps the producer's `slug` field to `projectSlug`; `invalidKey()` skips items without a valid rule key.
 
 Re-export the configuration-bound handler from a Route Handler:
 
@@ -99,38 +102,65 @@ Configure Payload to send events to the Route Handler:
 
 ```ts
 // payload.config.ts (database and admin options omitted)
+import type { CollectionConfig } from 'payload';
+import { sqliteAdapter } from '@payloadcms/db-sqlite';
 import { http } from '@klnap/revalidation/dispatchers/http';
 import { revalidation } from '@klnap/revalidation/producers/payload';
 import { buildConfig } from 'payload';
 
+const media: CollectionConfig = {
+  slug: 'media',
+  upload: true,
+  fields: [{ name: 'alt', type: 'text', localized: true }],
+};
+
 export default buildConfig({
+  secret: process.env.PAYLOAD_SECRET!,
+  db: sqliteAdapter({ client: { url: process.env.PAYLOAD_SQLITE_URL! } }),
   localization: {
     locales: ['en', 'fr'],
     defaultLocale: 'en',
   },
   collections: [
+    media,
     {
       slug: 'pages',
       custom: { revalidation: true },
       fields: [
         { name: 'title', type: 'text', localized: true },
         { name: 'slug', type: 'text', required: true, localized: true },
+        { name: 'heroImage', type: 'upload', relationTo: 'media' },
       ],
+    },
+  ],
+  globals: [
+    {
+      slug: 'site-settings',
+      custom: { revalidation: true },
+      fields: [{ name: 'siteName', type: 'text', localized: true }],
     },
   ],
   plugins: [
     revalidation({
-      target: {
-        url: process.env.REVALIDATION_URL!,
-        secret: process.env.REVALIDATION_SECRET!,
-      },
-      dispatcher: http(),
+      dispatcher: http({
+        target: {
+          url: process.env.REVALIDATION_URL!,
+          secret: process.env.REVALIDATION_SECRET!,
+        },
+      }),
+      media,
     }),
   ],
 });
 ```
 
-Set `REVALIDATION_SECRET` in both applications and point `REVALIDATION_URL` at `/api/revalidate`. Payload dispatches events after the save hook; delivery is best-effort. See [reliability](docs/reliability.md).
+Collections and globals opt in with `custom.revalidation`. The upload collection plus its `alt` field and the page's `heroImage` field enable localized media dependency tracking. Set `REVALIDATION_SECRET` in both applications and point `REVALIDATION_URL` at `/api/revalidate`. Payload dispatches after save hooks; delivery is best-effort. See [reliability](docs/reliability.md).
+
+## Reading the configuration
+
+> When this key is resolved, invalidate these cache targets.
+
+The producer determines what happened. The resolver determines which rule applies. The rule determines what to invalidate.
 
 ## Rules and modes
 
@@ -181,6 +211,14 @@ For schema-validated event sources, use the advanced `sources` and `layers` DSL.
 - [Custom sources](docs/sources/custom.md): validate other event shapes with the advanced `sources` and `layers` DSL.
 - [HTTP dispatcher](docs/dispatchers/http.md): delivery retries and limits.
 - [Architecture](docs/concepts/architecture.md): producer, dispatcher, consumer, and cache-layer contracts.
+
+## Development and verification
+
+- `bun run check` runs formatting, lint, type checks, package tests, static analysis, build, publint, and Are the Types Wrong.
+- `bun run test:integration` runs Payload database integration tests.
+- `bun run test:consumer-smoke -- <tarball>` runs the Payload and production Next.js integration smoke test.
+
+CI runs package-level checks and packed export validation. It does not run database integration or production framework-runtime tests.
 
 ## License
 

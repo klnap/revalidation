@@ -23,8 +23,6 @@ import { executeNextLayer } from './execute-next.js'
 import type { NextRevalidationHandlerConfig } from './handler-config.js'
 import { inspectHostEnvelope, processHostEnvelope } from './process-host-envelope.js'
 
-export type { NextRevalidationHandlerConfig } from './handler-config.js'
-
 export const logRevalidationDebug = (
   logger: Logger | undefined,
   requestId: string,
@@ -106,7 +104,7 @@ const readRequestBody = async (request: Request, maxBodyBytes: number): Promise<
   return new TextDecoder().decode(body)
 }
 
-export const createCache = (config: NextRevalidationHandlerConfig) => {
+export const createRevalidationCache = (config: NextRevalidationHandlerConfig) => {
   const mode = config.mode ?? 'expire'
   const maxBodyBytes = assertLimit(
     'maxBodyBytes',
@@ -267,7 +265,6 @@ export const createCache = (config: NextRevalidationHandlerConfig) => {
   return { route, inspect }
 }
 
-/** Next.js route handler: `export const POST = createRevalidationHandler(config)`. */
-export const createRevalidationHandler = (
+export const createPostHandler = (
   config: NextRevalidationHandlerConfig,
-): ((request: Request) => Promise<Response>) => createCache(config).route
+): ((request: Request) => Promise<Response>) => createRevalidationCache(config).route

@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "author": "klnap",
+  "packageManager": "bun@1.4.5",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -72,10 +73,17 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "bun run build && tsc -p tsconfig.json && tsc -p tsconfig.types.json",
-    "test": "bun run build && bun test",
-    "lint": "biome check .",
+    "test": "bun test src tests/unit tests/contract tests/docs",
+    "test:integration": "bun test tests/integration",
+    "test:consumer-smoke": "scripts/consumer-smoke.sh",
+    "format": "biome format .",
+    "lint": "biome lint .",
     "knip": "knip",
     "check:package": "publint --strict && attw --pack . --profile esm-only",
+    "check": "bun run format && bun run lint && bun run typecheck && bun run knip && bun run check:boundaries && bun run test && bun run build && bun run check:package",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:version-check": "bun run check",
     "prepack": "bun run build",
     "check:boundaries": "depcruise --config dependency-cruiser.config.mjs --output-type err-long src"
   },
@@ -97,12 +105,14 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "2.6.8",
+    "@changesets/cli": "3.0.3",
     "@payloadcms/db-sqlite": "3.94.1",
     "@swc/core": "^1",
     "@types/bun": "^1.4.4",
     "dependency-cruiser": "^18.8.0",
     "knip": "^6.48.0",
     "next": "16.4.6",
+    "npm": "12.2.3",
     "payload": "3.94.1",
     "publint": "^0.3.25",
     "typescript": "7.0.2"
@@ -111,6 +121,7 @@
     "node": "^22.23.5 || ^24.22.3 || >=26.13.1"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

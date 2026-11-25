@@ -20,8 +20,9 @@ export default buildConfig({
   ],
   plugins: [
     revalidation({
-      target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
-      dispatcher: http(),
+      dispatcher: http({
+        target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
+      }),
     }),
   ],
 });
@@ -90,7 +91,7 @@ Locales come from `config.localization`. Without localization, the producer uses
 
 A change to a shared media file also revalidates the documents that use it. See [media dependencies](payload-media-dependencies.md).
 
-## Limitations
+## Configuration isolation
 
-- Each `revalidation()` call stores its dispatcher target in process-wide state. A second Payload configuration in the same process replaces the first target.
+Each HTTP dispatcher closes over its own target. Multiple Payload configurations can use different targets without shared process state.
 - Only collections and globals with `custom.revalidation` are searched for dependents, and only the hooks listed above are emitted.

@@ -5,14 +5,17 @@ import {
   MAX_EVENT_ITEMS_CEILING,
 } from '../../core/event-limits.js'
 import type { CacheEvent, Dispatcher, DispatchInput, DispatchOutcome } from '../../core/index.js'
-import { resolveRevalidationTargets } from '../routing/resolve-target.js'
-import type { RevalidationTarget, TargetConfig } from '../routing/target-config.js'
+import {
+  toTargetList,
+  type RevalidationTarget,
+  type TargetConfig,
+} from '../../core/revalidation-target.js'
 
 const MAX_CONCURRENT_DELIVERIES = 4
 
 export type HttpDispatcherConfig = {
-  /** Overrides `revalidation({ target })` when set. Single object or array. */
-  target?: TargetConfig
+  /** One or more HTTP targets. */
+  target: TargetConfig
   /** Per-attempt timeout. */
   timeoutMs?: number
   /** Overall budget for one dispatch call, retries included. Default 5 s. */
@@ -32,14 +35,6 @@ export type HttpDispatcherConfig = {
    */
   maxEventItems?: number
 }
-
-const missingTargetOutcome = (): DispatchOutcome => ({
-  status: 'failed',
-  error: createDispatchError(
-    'HTTP_DISPATCH_ERROR',
-    'http dispatcher requires target in http({ target }) or revalidation({ target })',
-  ),
-})
 
 type AttemptResult = { outcome: DispatchOutcome; retryable: boolean }
 
@@ -258,13 +253,14 @@ const postEvent = async (
   }
 }
 
-export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
+export const http = (config: HttpDispatcherConfig): Dispatcher => {
   const maxEventItems = assertLimit(
     'maxEventItems',
     config.maxEventItems ?? DEFAULT_MAX_EVENT_ITEMS,
     MAX_EVENT_ITEMS_CEILING,
   )
-  const factoryTarget = config.target
+  const targets = toTargetList(config.target)
+  if (!targets.length) throw new Error('http dispatcher requires at least one target')
   const timeoutMs = config.timeoutMs ?? 15_000
   const deadlineMs = config.deadlineMs ?? 5_000
   const retries = config.retries ?? 2
@@ -274,9 +270,6 @@ export const http = (config: HttpDispatcherConfig = {}): Dispatcher => {
   return {
     maxEventItems,
     async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
-      const targets = resolveRevalidationTargets(factoryTarget)
-      if (!targets.length) return missingTargetOutcome()
-
       const baseDeliveryId = input.deduplicationId ?? crypto.randomUUID()
       // One deadline spans every target, event and retry of this call.
       const deadline = new AbortController()

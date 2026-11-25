@@ -1,39 +1,15 @@
 import { describe, expect, it, mock } from 'bun:test'
 
 import { http } from '../../../src/dispatchers/http'
-import {
-  resetRevalidationPluginTarget,
-  resolveRevalidationTargets,
-  setRevalidationPluginTarget,
-} from '../../../src/dispatchers/routing/resolve-target'
-
-describe('resolveRevalidationTargets', () => {
-  it('inherits plugin target when factory omits target', () => {
-    setRevalidationPluginTarget({ url: 'http://plugin', secret: 'p' })
-    expect(resolveRevalidationTargets()).toEqual([{ url: 'http://plugin', secret: 'p' }])
-    resetRevalidationPluginTarget()
-  })
-
-  it('prefers factory target over plugin target', () => {
-    setRevalidationPluginTarget({ url: 'http://plugin', secret: 'p' })
-    expect(resolveRevalidationTargets({ url: 'http://local', secret: 'l' })).toEqual([
-      { url: 'http://local', secret: 'l' },
-    ])
-    resetRevalidationPluginTarget()
-  })
-})
 
 describe('http dispatcher', () => {
   it('POSTs event JSON with bearer auth', async () => {
     const fetchMock = mock(async () => ({ ok: true, status: 200, statusText: 'OK' }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    setRevalidationPluginTarget({
-      url: 'http://frontend.test/api/revalidate',
-      secret: 'secret',
+    const dispatcher = http({
+      target: { url: 'http://frontend.test/api/revalidate', secret: 'secret' },
     })
-
-    const dispatcher = http()
     const outcome = await dispatcher.dispatch({
       events: [{ source: 'cms', data: [{ slug: 'pages' }] }],
     })
@@ -51,14 +27,10 @@ describe('http dispatcher', () => {
         body: JSON.stringify({ source: 'cms', data: [{ slug: 'pages' }] }),
       }),
     )
-
-    resetRevalidationPluginTarget()
   })
 
-  it('returns failed when no target is configured', async () => {
-    resetRevalidationPluginTarget()
-    const outcome = await http().dispatch({ events: [{ source: 'x', data: [] }] })
-    expect(outcome.status).toBe('failed')
+  it('rejects an empty target list', () => {
+    expect(() => http({ target: [] })).toThrow('http dispatcher requires at least one target')
   })
 
   it('dispatches to every target', async () => {
@@ -78,7 +50,6 @@ describe('http dispatcher', () => {
     await dispatcher.dispatch({ events: [{ source: 'cms', data: [] }] })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    resetRevalidationPluginTarget()
   })
 
   it('caps concurrent event deliveries at four', async () => {
@@ -132,15 +103,13 @@ describe('http dispatcher', () => {
       statusText: 'Service Unavailable',
     })) as unknown as typeof fetch
 
-    setRevalidationPluginTarget({ url: 'http://x', secret: 'y' })
-
-    const outcome = await http().dispatch({ events: [{ source: 'cms', data: [] }] })
+    const outcome = await http({
+      target: { url: 'http://x', secret: 'y' },
+    }).dispatch({ events: [{ source: 'cms', data: [] }] })
     expect(outcome.status).toBe('failed')
     if (outcome.status === 'failed') {
       expect(outcome.error.message).toMatch(/HTTP 503/)
     }
-
-    resetRevalidationPluginTarget()
   })
 
   it('does not include target URL query secrets in failures', async () => {
@@ -168,16 +137,15 @@ describe('http dispatcher', () => {
       return { ok: false, status: 500, statusText: 'Internal Server Error' }
     }) as unknown as typeof fetch
 
-    setRevalidationPluginTarget({ url: 'http://x', secret: 'y' })
-
-    const outcome = await http({ retryDelayMs: 1 }).dispatch({
+    const outcome = await http({
+      target: { url: 'http://x', secret: 'y' },
+      retryDelayMs: 1,
+    }).dispatch({
       events: [{ source: 'cms', data: [] }],
     })
     expect(outcome.status).toBe('failed')
     expect(calls).toBe(3)
     expect(outcome.status === 'failed' && outcome.error.message).toContain('attempts: 3/3')
-
-    resetRevalidationPluginTarget()
   })
 
   it('does not retry a 4xx response', async () => {
@@ -187,15 +155,14 @@ describe('http dispatcher', () => {
       return { ok: false, status: 401, statusText: 'Unauthorized' }
     }) as unknown as typeof fetch
 
-    setRevalidationPluginTarget({ url: 'http://x', secret: 'y' })
-
-    const outcome = await http({ retryDelayMs: 1 }).dispatch({
+    const outcome = await http({
+      target: { url: 'http://x', secret: 'y' },
+      retryDelayMs: 1,
+    }).dispatch({
       events: [{ source: 'cms', data: [] }],
     })
     expect(outcome.status).toBe('failed')
     expect(calls).toBe(1)
-
-    resetRevalidationPluginTarget()
   })
 
   it('accepts after a transient 503 and reuses one delivery id across attempts', async () => {
@@ -210,17 +177,16 @@ describe('http dispatcher', () => {
         : { ok: true, status: 200, statusText: 'OK' }
     }) as unknown as typeof fetch
 
-    setRevalidationPluginTarget({ url: 'http://x', secret: 'y' })
-
-    const outcome = await http({ retryDelayMs: 1 }).dispatch({
+    const outcome = await http({
+      target: { url: 'http://x', secret: 'y' },
+      retryDelayMs: 1,
+    }).dispatch({
       events: [{ source: 'cms', data: [] }],
       deduplicationId: 'delivery-1',
     })
     expect(outcome.status).toBe('accepted')
     expect(calls).toBe(3)
     expect(new Set(deliveries)).toEqual(new Set(['delivery-1:0']))
-
-    resetRevalidationPluginTarget()
   })
 
   it('aborts after timeoutMs and reports a timed-out failure', async () => {
@@ -235,17 +201,16 @@ describe('http dispatcher', () => {
         }),
     ) as unknown as typeof fetch
 
-    setRevalidationPluginTarget({ url: 'http://x', secret: 'y' })
-
-    const outcome = await http({ timeoutMs: 20 }).dispatch({
+    const outcome = await http({
+      target: { url: 'http://x', secret: 'y' },
+      timeoutMs: 20,
+    }).dispatch({
       events: [{ source: 'cms', data: [] }],
     })
     expect(outcome.status).toBe('failed')
     if (outcome.status === 'failed') {
       expect(outcome.error.message).toMatch(/timed out/)
     }
-
-    resetRevalidationPluginTarget()
   })
 })
 
@@ -371,15 +336,21 @@ describe('http dispatcher bounds', () => {
 
 describe('http dispatcher chunk size', () => {
   it('defaults to 100 items per event and exposes it to the producer', () => {
-    expect(http().maxEventItems).toBe(100)
+    expect(http({ target: { url: 'http://x', secret: 'y' } }).maxEventItems).toBe(100)
   })
 
   it('accepts a chunk size up to 1000', () => {
-    expect(http({ maxEventItems: 1000 }).maxEventItems).toBe(1000)
+    expect(
+      http({ target: { url: 'http://x', secret: 'y' }, maxEventItems: 1000 }).maxEventItems,
+    ).toBe(1000)
   })
 
   it('rejects a chunk size above 1000 or below 1 at configuration time', () => {
-    expect(() => http({ maxEventItems: 1001 })).toThrow(RangeError)
-    expect(() => http({ maxEventItems: 0 })).toThrow(RangeError)
+    expect(() => http({ target: { url: 'http://x', secret: 'y' }, maxEventItems: 1001 })).toThrow(
+      RangeError,
+    )
+    expect(() => http({ target: { url: 'http://x', secret: 'y' }, maxEventItems: 0 })).toThrow(
+      RangeError,
+    )
   })
 })

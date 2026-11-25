@@ -1,5 +1,5 @@
 import { compileHostRevalidation } from './compile-revalidation-host.js'
-import { createRevalidationHandler } from './create-cache.js'
+import { createPostHandler } from './create-cache.js'
 import type {
   BuiltPaths,
   BuiltTags,
@@ -30,6 +30,6 @@ export function defineRevalidation<
   return {
     tags: compiled.tags,
     paths: compiled.paths,
-    POST: createRevalidationHandler(compiled.config),
+    POST: createPostHandler(compiled.config),
   }
 }

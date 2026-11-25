@@ -1,9 +1,4 @@
 export {
-  createCache,
-  createRevalidationHandler,
-  type NextRevalidationHandlerConfig,
-} from './create-cache.js'
-export {
   type DefinedRevalidation,
   defineRevalidation,
 } from './define-revalidation.js'

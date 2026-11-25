@@ -13,7 +13,6 @@ const publicExports = {
     'aggregateDispatchOutcomes',
     'createDispatchError',
     'createPipeline',
-    'normalizeTargets',
     'toHttpStatus',
   ],
   './sources/payload': ['payloadRevalidationItemSchema', 'payloadRevalidationSource'],
@@ -25,15 +24,9 @@ const publicExports = {
     'revalidation',
     'revalidationOrderableHooks',
   ],
-  './consumers/next': [
-    'InvalidKeyError',
-    'createCache',
-    'createRevalidationHandler',
-    'defineRevalidation',
-    'invalidKey',
-  ],
+  './consumers/next': ['InvalidKeyError', 'defineRevalidation', 'invalidKey'],
   './consumers/next/tags': ['defineRevalidationTags'],
-  './dispatchers': ['http', 'normalizeTargets', 'resolveRevalidationTargets'],
+  './dispatchers': ['http'],
   './dispatchers/http': ['http'],
 } as const
 
@@ -54,10 +47,11 @@ describe('package export subpaths', () => {
     })
   }
 
-  it('dispatchers barrel exports http and not payloadJobs', async () => {
+  it('dispatchers barrel exposes only the current transport API', async () => {
     const mod = await import('@klnap/revalidation/dispatchers')
     expect(mod).toHaveProperty('http')
-    expect(mod).not.toHaveProperty('payloadJobs')
+    expect(mod).not.toHaveProperty('normalizeTargets')
+    expect(mod).not.toHaveProperty('resolveRevalidationTargets')
   })
 
   it('does not expose an unbound route handler or module registry', async () => {
@@ -65,5 +59,7 @@ describe('package export subpaths', () => {
     expect(mod).not.toHaveProperty('POST')
     expect(mod).not.toHaveProperty('getDefinedRevalidation')
     expect(mod).not.toHaveProperty('resetDefinedRevalidation')
+    expect(mod).not.toHaveProperty('createCache')
+    expect(mod).not.toHaveProperty('createRevalidationHandler')
   })
 })

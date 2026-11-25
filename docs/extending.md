@@ -8,7 +8,7 @@ The package exposes extension points for compatible producers, sources, dispatch
 - **Custom source:** Define a Valibot schema, item preparation, key resolver, and optional template-parameter resolver. See [custom sources](sources/custom.md).
 - **Custom dispatcher:** Implement `dispatch({ events, deduplicationId? })` and return a `DispatchOutcome`. Pass it to the Payload producer or use it with the core pipeline.
 - **Custom cache layer:** Add a layer to the consumer rules and provide its `execute` handler. See [Next.js custom cache layers](consumers/next.md#custom-cache-layers).
-- **Explicit consumer configuration:** Use `createRevalidationHandler(config)` or `createCache(config)` when you do not use `defineRevalidation`. See the [Route Handler guide](consumers/next.md#route-handler).
+- **Consumer configuration:** Use `defineRevalidation()` to compile cache targets, resolve events, and bind the Route Handler.
 - **Orderable Payload hooks:** Use the exported `revalidationOrderableHooks` integration.
 
 The built-in integrations are Payload CMS for event production, the Payload event source, HTTP delivery, and Next.js cache invalidation. Other CMS, framework, and transport integrations are not included.

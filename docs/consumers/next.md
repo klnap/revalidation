@@ -47,8 +47,6 @@ export { POST } from '@/revalidation';
 
 The handler accepts only `POST`, checks `Authorization: Bearer <secret>`, then validates and processes the event. The local configuration module must exist in the server bundle; there is no import-order or registry setup.
 
-For explicit configuration without `defineRevalidation`, use `createRevalidationHandler(config)`. `createCache(config)` returns `{ route, inspect }`; `inspect` resolves an event without executing cache layers.
-
 ## Typed cache tags and paths
 
 Use the generated helpers in cached server functions:
