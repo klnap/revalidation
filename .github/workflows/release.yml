@@ -61,6 +61,7 @@ jobs:
     if: needs.prepare.outputs.mode == 'publish'
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
       contents: read
     outputs:
       pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}
@@ -106,7 +107,10 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.pack.outputs.pack-dir-artifact-id }}
+          github-token: ${{ github.token }}
           path: ${{ runner.temp }}/changesets-pack
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
 
       - name: Verify the exact packed release artifact
         env:
