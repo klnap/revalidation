@@ -15,7 +15,7 @@ describe('consumer with a custom source', () => {
         resolve: ({ item }) => (item as { key: string }).key,
       },
     },
-    layers: (tags) => ({
+    layers: ({ tags }) => ({
       next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
     }),
   })

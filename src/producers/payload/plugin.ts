@@ -1,7 +1,5 @@
 import type { CollectionConfig, Config, GlobalConfig, Plugin } from 'payload'
 import type { Dispatcher, DispatchInput, DispatchOutcome } from '../../core/index.js'
-import { setRevalidationPluginTarget } from '../../core/plugin-target.js'
-import type { TargetConfig } from '../../core/revalidation-target.js'
 import {
   buildPluginExcludeFieldsBySlug,
   normalizeExcludeFields,
@@ -36,8 +34,6 @@ type ConfigWithRevalidationMarker = Config & {
 
 export type DispatcherSelection = Dispatcher | { default: Dispatcher; fallback?: Dispatcher }
 
-export type { RevalidationTarget, TargetConfig } from '../../core/revalidation-target.js'
-
 export type MediaPluginConfig =
   | CollectionConfig
   | {
@@ -52,10 +48,6 @@ export type PluginSchemaExcludeConfig = {
 
 export type PayloadRevalidationPluginConfig = {
   dispatcher: DispatcherSelection
-  /**
-   * Default HTTP target(s) for `http()` when its factory omits `target`.
-   */
-  target?: TargetConfig
   /**
    * Upload collection for media-dependent hooks (optional).
    * Omitted → auto: only upload collection, or slug `media` among uploads.
@@ -202,7 +194,6 @@ export function revalidation(config: PayloadRevalidationPluginConfig): Plugin {
       throw new Error('revalidation: plugin is already applied to this Payload config')
     }
 
-    setRevalidationPluginTarget(config.target)
     const mediaSlug = resolveMediaSlug(incoming, mediaCollectionOverride)
 
     validateRevalidationExcludeFieldsOnConfig(

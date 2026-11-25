@@ -10,15 +10,54 @@ defineRevalidation({
   secret: 's',
   tags: { homePage: '[locale]:home-page' },
   sources: { payload: src },
-  layers: (t, _p) => ({
+  layers: ({ tags }) => ({
     next: [
       {
         key: { payload: 'home-page' },
         // @ts-expect-error — unknown tag on BuiltTags
-        invalidates: [t.unknownTag],
+        invalidates: [tags.unknownTag],
       },
     ],
   }),
+})
+
+const pathOnly = defineRevalidation({
+  secret: 's',
+  paths: { homePath: '/[locale]' },
+  resolve: (event) => event.key ?? 'home',
+  rules: ({ paths }) => ({ home: { paths: [paths.homePath] } }),
+})
+pathOnly.paths.homePath({ locale: 'en' })
+// @ts-expect-error — path-only configuration does not declare cache tags
+pathOnly.tags.homePage
+
+const tagOnly = defineRevalidation({
+  secret: 's',
+  tags: { homeTag: '[locale]:home' },
+  resolve: () => 'home',
+  rules: ({ tags }) => ({ home: [tags.homeTag] }),
+})
+tagOnly.tags.homeTag({ locale: 'en' })
+// @ts-expect-error — tag-only configuration does not declare cache paths
+tagOnly.paths.homePath({ locale: 'en' })
+
+const combined = defineRevalidation({
+  secret: 's',
+  tags: { homeTag: '[locale]:home' },
+  paths: { homePath: '/[locale]' },
+  resolve: () => 'home',
+  rules: ({ tags, paths }) => ({
+    home: { tags: [tags.homeTag], paths: [paths.homePath] },
+  }),
+})
+combined.tags.homeTag({ locale: 'en' })
+combined.paths.homePath({ locale: 'en' })
+
+// @ts-expect-error — a simple rules configuration requires explicit resolution
+defineRevalidation({
+  secret: 's',
+  tags: { homeTag: '[locale]:home' },
+  rules: ({ tags }) => ({ home: [tags.homeTag] }),
 })
 
 defineRevalidation({
@@ -26,25 +65,45 @@ defineRevalidation({
   tags: { homePage: '[locale]:home-page' },
   // @ts-expect-error — key.medusa requires sources.medusa
   sources: { payload: src },
-  layers: (t, _p) => ({
-    next: [{ key: { payload: 'home-page', medusa: 'x' }, invalidates: [t.homePage] }],
+  layers: ({ tags }) => ({
+    next: [{ key: { payload: 'home-page', medusa: 'x' }, invalidates: [tags.homePage] }],
   }),
 })
 
-defineRevalidation({
+const advancedPaths = defineRevalidation({
   secret: 's',
-  tags: { homePage: '[locale]:home-page' },
   paths: { homePath: '/[locale]' },
   sources: { payload: src },
-  layers: (_t, p) => ({
+  layers: ({ paths }) => ({
     next: [
       {
         key: { payload: 'home-page' },
         invalidates: {
           // @ts-expect-error — unknown path on BuiltPaths
-          paths: [p.unknownPath],
+          paths: [paths.unknownPath],
         },
       },
     ],
   }),
+})
+advancedPaths.paths.homePath({ locale: 'en' })
+
+defineRevalidation({
+  secret: 's',
+  tags: { page: '[locale]:page:[slug]' },
+  paths: { page: '/[locale]/[slug]' },
+  resolve: (event) => event.key ?? 'pages',
+  rules: {
+    layers: {
+      next: ({ tags, paths }) => ({
+        pages: { tags: [tags.page], paths: [paths.page] },
+      }),
+      cdn: ({ tags }) => ({ pages: [tags.page] }),
+    },
+  },
+  execute: {
+    cdn: async ({ tags }) => {
+      tags.map((tag) => tag.value)
+    },
+  },
 })

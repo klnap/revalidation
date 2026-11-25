@@ -5,7 +5,7 @@ import type {
   BuiltTags,
   DefineRevalidationInput,
   DefineRevalidationInputFull,
-  DefineRevalidationInputLowEffort,
+  DefineRevalidationInputRules,
   PathTemplate,
   TagTemplate,
 } from './host-types.js'
@@ -13,11 +13,10 @@ import type {
 const hasOwn = <TObject extends object>(obj: TObject, key: string): boolean =>
   Object.hasOwn(obj, key)
 
-const hasLowEffortInvalidate = <TInput extends object>(input: TInput): boolean =>
-  hasOwn(input, 'invalidate')
+const hasRules = <TInput extends object>(input: TInput): boolean => hasOwn(input, 'rules')
 
 export const isLowEffortHostInput = (input: object): boolean =>
-  hasLowEffortInvalidate(input) && !hasOwn(input, 'sources')
+  hasRules(input) && !hasOwn(input, 'sources')
 
 export const normalizeHostInput = <
   TTags extends Record<string, TagTemplate>,
@@ -28,21 +27,21 @@ export const normalizeHostInput = <
   builtTags: BuiltTags<Record<string, TagTemplate>>,
   builtPaths: BuiltPaths<Record<string, PathTemplate>>,
 ): DefineRevalidationInputFull<TTags, TPaths, string> => {
-  if (hasLowEffortInvalidate(input) && hasOwn(input, 'sources')) {
+  if (hasRules(input) && hasOwn(input, 'sources')) {
     throw new CacheConfigurationError(
-      'defineRevalidation: use either invalidate (low-effort) or sources + layers function, not both',
+      'defineRevalidation: use either rules (simple form) or sources + layers function, not both',
     )
   }
 
-  if (hasLowEffortInvalidate(input) && hasOwn(input, 'layers')) {
+  if (hasRules(input) && hasOwn(input, 'layers')) {
     throw new CacheConfigurationError(
-      'defineRevalidation: low-effort uses invalidate only — not top-level layers (use invalidate.layers for next / CDN)',
+      'defineRevalidation: simple rules use rules.layers for cache layers, not top-level layers',
     )
   }
 
   if (isLowEffortHostInput(input)) {
     return expandLowEffortHost(
-      input as DefineRevalidationInputLowEffort<TTags, TPaths | undefined>,
+      input as DefineRevalidationInputRules<TTags, TPaths>,
       builtTags,
       builtPaths,
     ) as DefineRevalidationInputFull<TTags, TPaths, string>
@@ -50,14 +49,14 @@ export const normalizeHostInput = <
 
   if (!hasOwn(input, 'sources') || !hasOwn(input, 'layers')) {
     throw new CacheConfigurationError(
-      'defineRevalidation: sources and layers function are required for full DSL, or invalidate for low-effort',
+      'defineRevalidation: sources and layers function are required for the source DSL, or rules for the simple form',
     )
   }
 
   const fullLayers = (input as DefineRevalidationInputFull<TTags, TPaths, TSource>).layers
   if (typeof fullLayers !== 'function') {
     throw new CacheConfigurationError(
-      'defineRevalidation: full DSL requires layers to be a function; low-effort uses invalidate',
+      'defineRevalidation: source DSL requires layers to be a function',
     )
   }
 

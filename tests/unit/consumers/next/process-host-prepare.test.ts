@@ -20,7 +20,7 @@ describe('processHostEnvelope prepare', () => {
           params: ({ item }) => ({ locale: (item as { locale: string }).locale }),
         },
       },
-      layers: (t) => ({
+      layers: ({ tags: t }) => ({
         next: [
           {
             key: { payload: 'home-page' },

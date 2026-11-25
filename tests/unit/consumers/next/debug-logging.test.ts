@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
-import { createCache, logRevalidationDebug } from '../../../../src/consumers/next/create-cache'
+import {
+  createRevalidationCache,
+  logRevalidationDebug,
+} from '../../../../src/consumers/next/create-cache'
 import type { InspectResult } from '../../../../src/core'
 import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
 
@@ -62,12 +65,12 @@ describe('revalidation debug logging', () => {
         project: '[locale]:project:[slug]',
       },
       resolve: ({ item }) => (item as { key: string }).key,
-      invalidate: (tag) => ({
+      rules: ({ tags: tag }) => ({
         projects: [tag.project],
       }),
     })
 
-    const cache = createCache(config)
+    const cache = createRevalidationCache(config)
     await cache.route(
       new Request('http://localhost/api/revalidate', {
         method: 'POST',
@@ -104,12 +107,12 @@ describe('revalidation debug logging', () => {
           resolve: () => 'home-page',
         },
       },
-      layers: (t) => ({
+      layers: ({ tags: t }) => ({
         next: [{ key: { payload: 'home-page' }, invalidates: [t.homePage] }],
       }),
     })
 
-    const cache = createCache(config)
+    const cache = createRevalidationCache(config)
     await cache.route(
       new Request('http://localhost/api/revalidate', {
         method: 'POST',

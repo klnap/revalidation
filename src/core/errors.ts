@@ -31,7 +31,7 @@ export class CacheResolutionError extends Error {
 }
 
 /**
- * Host `resolve` could not map wire fields to an `invalidates` key.
+ * Host `resolve` could not map producer data to a rule key.
  * Throw via `invalidKey()` — consumer skips that wire item (warn log), not a failed POST.
  */
 export class InvalidKeyError extends Error {

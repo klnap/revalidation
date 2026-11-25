@@ -1,80 +1,82 @@
-# Cache tags
+# Cache tags and paths
 
-Cache tags connect cached data to the events that invalidate it. `@klnap/revalidation` generates them from declarations, so the string used for caching and the string used for invalidation come from the same template.
+`defineRevalidation` turns tag and path templates into typed helpers. Cached functions and event rules can use the same helpers, so they produce the same string from the same parameters.
 
-## Declaring tags
+## Declare targets once
 
 ```ts
-// src/revalidation.ts
+import 'server-only';
 import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
 
-export const { tags, paths } = defineRevalidation({
+export const { tags, paths, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
   tags: {
-    page: '[locale]:page:[slug]', // parameterized
-    siteSettings: '[locale]:site-settings', // parameterized by locale only
-    navigation: 'navigation', // static: no parameters
+    project: '[locale]:project:[slug]',
+    settings: 'settings',
+  },
+  paths: {
+    project: '/[locale]/work/[slug]',
+    sitemap: '/sitemap.xml',
   },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (cacheTags) => ({
-    pages: [cacheTags.page],
-    'site-settings': [cacheTags.siteSettings],
-    navigation: [cacheTags.navigation],
+  rules: ({ tags, paths }) => ({
+    projects: { tags: [tags.project], paths: [paths.project, paths.sitemap] },
+    settings: [tags.settings],
   }),
 });
 ```
 
-A template is a string. Each `[name]` is a parameter. Names must start with a letter and contain letters, digits or underscores. Literal text is copied unchanged.
+Each bracketed name is a template parameter. Static templates such as `'settings'` and `'/sitemap.xml'` produce no-argument helpers.
 
-`defineRevalidation` returns `tags` and `paths`. Export them and import them wherever you cache data or change tags.
-
-## Using tags
+## Use the helpers
 
 ```ts
 import { cacheTag } from 'next/cache';
 import { tags } from '@/revalidation';
 
-export async function getPage(locale: string, slug: string) {
+export async function getProject(locale: string, slug: string) {
   'use cache';
-  cacheTag(tags.page({ locale, slug }));
+  cacheTag(tags.project({ locale, slug }));
+  // Load the project.
 }
 
-export async function getNavigation() {
+export async function getSettings() {
   'use cache';
-  cacheTag(tags.navigation());
+  cacheTag(tags.settings());
 }
 ```
 
-For an event with `key: "pages"`, `locale: "en"` and `slug: "about"`, the rule renders `[locale]:page:[slug]` as `en:page:about`. `getPage('en', 'about')` tags its entry with the same string, so the event expires that entry and no other.
+For a rule matching `projects`, `tags.project({ locale: 'en', slug: 'studio' })` builds `en:project:studio`, which is the tag invalidated for the same event parameters.
 
-## What TypeScript checks
+## TypeScript guarantees
 
-Checked at compile time:
+TypeScript checks:
 
-- The tag name must be declared: `tags.nope(...)` does not compile.
-- A static tag takes no arguments: `tags.navigation()` compiles, but `tags.navigation({})` does not.
-- A dynamic tag requires every template parameter: `tags.page({ locale: 'en' })` does not compile.
-- Parameter values must be strings: `tags.page({ locale: 'en', slug: 1 })` does not compile.
+- The helper name exists in this configuration.
+- Every required template parameter is present.
+- Parameter values are strings.
+- Static helpers take no arguments.
+- Rule targets reference helpers declared by this configuration.
 
-Not checked at compile time:
+TypeScript does not validate incoming event data, compare templates from separate configurations, reject extra keys passed through variables, or prevent parameter combinations from colliding. JavaScript callers and values forced through type assertions can also violate the declared types.
 
-- Extra keys on values passed through variables are not rejected by structural typing.
-- `null` values from JavaScript callers, or values cast with `as`.
-- Tags declared by a different `defineRevalidation` call. Their names are not compared at compile time.
+At runtime, helper calls with missing or empty parameters throw. For events, a missing rule parameter skips only that tag or path; a configured logger records the skip. Values are not escaped, so choose delimiters that cannot collide with parameter values.
 
-Covered by tests: `tests/types/cache-tags.test-d.ts` checks the compile-time rules above, positive and negative, and runs in `bun run typecheck`.
+## Helpers without a handler
 
-## What happens at runtime
+Code that only needs cache helpers can avoid importing the secret-bearing Route Handler configuration:
 
-- A missing or empty parameter (`undefined`, `''`, `null`) throws `Tag "page" missing param(s): slug` when a helper is called directly.
-- When an event lacks a parameter that a rule needs, that tag or path is skipped and the event still succeeds. With a configured `logger`, the skip is logged as `cache.revalidate.item.skipped` with reason `missing_param`.
-- Parameter values are not escaped. A value that contains `:` can produce the same string as another combination. Choose separators and values that cannot collide, for example slugs without `:`.
-- Event parameters longer than 256 characters are rejected for the whole request (`400`). Direct helper calls accept them. Keep slugs shorter than 256 characters.
+```ts
+import { defineRevalidationTags } from '@klnap/revalidation/consumers/next/tags';
 
-## What this guarantees, and what it does not
+export const { tags, paths } = defineRevalidationTags({
+  tags: { project: '[locale]:project:[slug]' },
+  paths: { project: '/[locale]/work/[slug]' },
+});
+```
 
-It guarantees that the cached-data side and the invalidation side generate identical strings from one declaration. It does not guarantee cache freshness:
+This helper builds tags and paths only. It does not require a secret, initialize a handler, or import Next.js cache APIs. Keep the templates in a shared object if both this module and `defineRevalidation` need them.
 
-- Caching data with the tag is your responsibility; a function that does not call `cacheTag` is not invalidated.
-- Invalidation happens only when the event is delivered and accepted. See [reliability](../reliability.md).
-- Next.js decides when a stale entry is regenerated. See [the consumer guide](../consumers/next.md#modes).
+Use these helpers in cached application code. Inside `defineRevalidation`, build rule targets from the `tags` and `paths` passed to its callback; those references belong to that handler configuration.
+
+These types ensure that the cache and rule sides share helper declarations. They do not guarantee event delivery, successful cache-layer execution, cache freshness, or protection from every possible tag collision. See [reliability](../reliability.md).

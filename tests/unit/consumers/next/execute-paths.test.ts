@@ -20,7 +20,7 @@ describe('custom execute receives paths', () => {
           resolve: () => 'home-page',
         },
       },
-      layers: (_t, p) => ({
+      layers: ({ tags: _t, paths: p }) => ({
         purge: [{ key: { payload: 'home-page' }, invalidates: { paths: [p.homePath] } }],
       }),
       execute: {

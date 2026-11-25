@@ -10,10 +10,11 @@ Defined in `package.json` `exports` (do not deep-import `src/`):
 
 | Subpath | Purpose |
 | :--- | :--- |
-| `@klnap/revalidation` | Core pipeline, errors, target normalization, dispatch outcome helpers |
+| `@klnap/revalidation` | Core pipeline, errors, dispatch outcome helpers |
 | `@klnap/revalidation/sources/payload` | Canonical Payload item schema + `payloadRevalidationSource()` |
 | `@klnap/revalidation/producers/payload` | `revalidation()` Payload plugin |
-| `@klnap/revalidation/consumers/next` | `createRevalidationHandler`, `createCache` |
+| `@klnap/revalidation/consumers/next` | `defineRevalidation`, `invalidKey` |
+| `@klnap/revalidation/consumers/next/tags` | Cache tag and path helper generation |
 | `@klnap/revalidation/dispatchers` | Barrel (prefer transport subpaths for tree shaking) |
 | `@klnap/revalidation/dispatchers/http` | HTTP dispatcher only |
 

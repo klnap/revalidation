@@ -13,7 +13,7 @@ describe('invalidKey', () => {
       secret: 's',
       resolve: () => invalidKey(),
       tags: { homePage: '[locale]:home-page' },
-      invalidate: (tag) => ({ 'home-page': [tag.homePage] }),
+      rules: ({ tags: tag }) => ({ 'home-page': [tag.homePage] }),
     })
 
     const result = inspectHostEnvelope(

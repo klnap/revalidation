@@ -7,7 +7,7 @@ import {
 } from './revalidation-custom.ts'
 
 describe('normalizeIdentifiers (string | string[] contract)', () => {
-  it('keeps a single string as one identifier (backwards compatible)', () => {
+  it('treats a single string as one identifier', () => {
     expect(normalizeIdentifiers('slug')).toEqual(['slug'])
     expect(normalizeCollectionRevalidation({ identifier: 'slug' }).identifier).toBe('slug')
   })

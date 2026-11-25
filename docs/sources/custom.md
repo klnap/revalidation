@@ -24,13 +24,15 @@ Every request to the consumer, and every event from the built-in dispatcher, has
 
 ## Defining a custom source
 
-Use the full DSL with `sources` and `layers`. This is the complete example from the README, verified by `tests/unit/consumers/next/standalone-source.test.ts`:
+Use the full DSL with `sources` and `layers` when event items need schema validation:
+
+Each advanced layer rule has an explicit source key and an `invalidates` target. The simple root-level `rules` map instead keys targets by the resolved event key.
 
 ```ts
 import * as v from 'valibot';
 import { defineRevalidation } from '@klnap/revalidation/consumers/next';
 
-export const { tags } = defineRevalidation({
+export const { tags, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
   tags: { pricing: 'pricing' },
   sources: {
@@ -39,10 +41,17 @@ export const { tags } = defineRevalidation({
       resolve: ({ item }) => (item as { key: string }).key,
     },
   },
-  layers: (tags) => ({
+  layers: ({ tags }) => ({
     next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
   }),
 });
+```
+
+Re-export this bound handler from the Route Handler:
+
+```ts
+// app/api/revalidate/route.ts
+export { POST } from '@/revalidation';
 ```
 
 Then send an event:
@@ -63,22 +72,22 @@ The consumer returns `200` and invalidates the `pricing` tag.
 - `prepare` (optional): returns extra fields that are merged into the item before `resolve`.
 - `params` (optional): returns the template parameters for tags and paths.
 
-`valibot` must be installed in the consumer application.
+Add `valibot` as a direct dependency when your application imports its schema API.
 
 ## Simple form
 
-Without `sources`, `invalidate` accepts any source name:
+Without `sources`, the simple `rules` form accepts any source name:
 
 ```ts
 defineRevalidation({
   secret,
   tags: { pricing: 'pricing' },
   resolve: (event) => event.key ?? invalidKey(),
-  invalidate: (t) => ({ pricing: [t.pricing] }),
+  rules: ({ tags }) => ({ pricing: [tags.pricing] }),
 });
 ```
 
-In this form only items that are not objects are skipped; there is no schema validation. Prefer the full DSL when items come from outside your system.
+In this form, no source schema validates the item. Only values that are not objects are skipped before `resolve`. Use the full DSL when incoming event data needs validation.
 
 ## Unknown sources and unmatched keys
 

@@ -14,10 +14,9 @@ Organize `src/` as ports/adapters:
 
 | Layer | Role | May import from `src` | Forbidden npm (runtime) |
 | :--- | :--- | :--- | :--- |
-| `core` | Types, pipeline, target registry | `core` only | `payload`, `next` |
+| `core` | Types and pipeline | `core` only | `payload`, `next` |
 | `producers/payload` | Payload plugin, lifecycle hooks, media dependents | `core`, `producers/payload` | `next` |
-| `dispatchers/routing` | Target resolution (plugin + factory precedence) | `core` | `payload`, `next` |
-| `dispatchers/http` | Synchronous HTTP delivery | `core`, `dispatchers/routing` | `payload`, `next` |
+| `dispatchers/http` | HTTP delivery with dispatcher-bound targets | `core` | `payload`, `next` |
 | `consumers/next` | Next route handler + cache inspect | `core`, `sources/payload` (wire schema only) | `payload` |
 
 Additional rules:
@@ -34,11 +33,11 @@ Enforcement: `bun run check:boundaries` (`dependency-cruiser.config.mjs`).
 | :--- | :--- |
 | New CMS collection/global hook (non-media) | `producers/payload/lifecycle/` |
 | Media upload dependents | `producers/payload/media/` |
-| New transport | `dispatchers/<transport>/` + use `routing/` for targets |
-| Shared target / plugin state | `core/` (`revalidation-target`, `plugin-target`) |
+| New transport | `dispatchers/<transport>/` |
 | Next consumer behavior | `consumers/next/` |
 
 ## Consequences
 
 - Producers never import dispatchers; the dispatcher is passed to `revalidation({ dispatcher })`.
+- HTTP targets are captured by each dispatcher instance; no process-wide target state exists.
 - Hosts import only documented `package.json` export subpaths.

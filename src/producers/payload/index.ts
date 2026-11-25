@@ -13,9 +13,7 @@ export {
   type MediaPluginConfig,
   type PayloadRevalidationPluginConfig,
   type PluginSchemaExcludeConfig,
-  type RevalidationTarget,
   revalidation,
-  type TargetConfig,
 } from './plugin.js'
 export type {
   PayloadRevalidationCustom,

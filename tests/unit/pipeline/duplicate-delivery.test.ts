@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../src/consumers/next/compile-revalidation-host'
-import { createRevalidationHandler } from '../../../src/consumers/next/create-cache'
+import { createPostHandler } from '../../../src/consumers/next/create-cache'
 
 describe('duplicate consumer delivery', () => {
   it('accepts repeated POSTs (at-least-once delivery)', async () => {
@@ -10,7 +10,7 @@ describe('duplicate consumer delivery', () => {
       secret: 'dup-secret',
       tags: { page: '[locale]:page' },
       resolve: ({ item }) => (item as { key: string }).key,
-      invalidate: (t) => ({ pages: [t.page] }),
+      rules: ({ tags: t }) => ({ pages: [t.page] }),
       execute: {
         next: async () => {
           runs += 1
@@ -18,7 +18,7 @@ describe('duplicate consumer delivery', () => {
       },
     })
 
-    const handler = createRevalidationHandler(config)
+    const handler = createPostHandler(config)
     const body = JSON.stringify({
       source: 'payload',
       data: {

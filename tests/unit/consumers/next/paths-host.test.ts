@@ -21,7 +21,7 @@ describe('host paths', () => {
           resolve: ({ item }) => (item as { key: string }).key,
         },
       },
-      layers: (t, p) => ({
+      layers: ({ tags: t, paths: p }) => ({
         next: [
           {
             key: { payload: 'projects' },
@@ -67,7 +67,7 @@ describe('host paths', () => {
           resolve: () => 'home-page',
         },
       },
-      layers: (_t, p) => ({
+      layers: ({ tags: _t, paths: p }) => ({
         edge: [{ key: { payload: 'home-page' }, invalidates: { paths: [p.homePath] } }],
       }),
     })
@@ -99,7 +99,7 @@ describe('host paths', () => {
             resolve: () => 'home-page',
           },
         },
-        layers: (_t, p) => ({
+        layers: ({ tags: _t, paths: p }) => ({
           next: [
             {
               key: { payload: 'home-page' },
@@ -123,10 +123,10 @@ describe('host paths', () => {
       tags: { homePage: 'home' },
       paths: { homePath: '/foreign/[locale]' },
       sources: source,
-      layers: (_tags, paths) => ({
+      layers: ({ tags: _tags, paths }) => ({
         next: [{ key: { payload: 'home-page' }, invalidates: { paths: [paths.homePath] } }],
       }),
-    }).paths.homePath!
+    }).paths.homePath
 
     expect(() =>
       compileHostRevalidation({

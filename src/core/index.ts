@@ -15,11 +15,6 @@ export {
   type PipelineConfig,
   type SourceDefinition,
 } from './pipeline.js'
-export {
-  normalizeTargets,
-  type RevalidationTarget,
-  type TargetConfig,
-} from './revalidation-target.js'
 export type {
   CacheEntry,
   CacheEvent,

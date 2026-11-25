@@ -11,5 +11,5 @@
   ],
   "project": ["src/**/*.ts", "tests/**/*.ts"],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@swc/core"]
+  "ignoreDependencies": ["@swc/core", "npm"]
 }

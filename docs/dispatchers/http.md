@@ -4,10 +4,11 @@ The HTTP dispatcher delivers events from a producer to a consumer over HTTP. It 
 
 ```ts
 import { http } from '@klnap/revalidation/dispatchers/http';
+import { revalidation } from '@klnap/revalidation/producers/payload';
 
 revalidation({
-  target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
   dispatcher: http({
+    target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
     timeoutMs: 15_000,
     deadlineMs: 5_000,
     retries: 2,
@@ -18,7 +19,7 @@ revalidation({
 });
 ```
 
-The values above are the defaults. `target` can be given to `http()` instead of the plugin; the one on `http()` wins.
+The values above are the defaults. Give `http()` one target or an array of targets; each dispatcher owns its targets.
 
 ## Request
 
