@@ -28,6 +28,8 @@ A template is a string. Each `[name]` is a parameter. Names must start with a le
 
 `defineRevalidation` returns `tags` and `paths`. Export them and import them wherever you cache data or change tags.
 
+Use `defineRevalidationTags` when a module only needs to create and export helpers. It does not register the configuration or secret needed by the `POST` handler; the handler still needs `defineRevalidation`.
+
 ## Using tags
 
 ```ts
@@ -62,8 +64,6 @@ Not checked at compile time:
 - `null` values from JavaScript callers, or values cast with `as`.
 - Tags declared by a different `defineRevalidation` call. Their names are not compared at compile time.
 
-Covered by tests: `tests/types/cache-tags.test-d.ts` checks the compile-time rules above, positive and negative, and runs in `bun run typecheck`.
-
 ## What happens at runtime
 
 - A missing or empty parameter (`undefined`, `''`, `null`) throws `Tag "page" missing param(s): slug` when a helper is called directly.
@@ -73,8 +73,9 @@ Covered by tests: `tests/types/cache-tags.test-d.ts` checks the compile-time rul
 
 ## What this guarantees, and what it does not
 
-It guarantees that the cached-data side and the invalidation side generate identical strings from one declaration. It does not guarantee cache freshness:
+The shared declaration makes the cached-data helper and matching rule generate the same string when given the same parameter values. TypeScript does not guarantee event validity or delivery, cache invalidation success, or cache freshness:
 
 - Caching data with the tag is your responsibility; a function that does not call `cacheTag` is not invalidated.
 - Invalidation happens only when the event is delivered and accepted. See [reliability](../reliability.md).
 - Next.js decides when a stale entry is regenerated. See [the consumer guide](../consumers/next.md#modes).
+- TypeScript does not compare templates from separate declarations or prevent different parameter combinations from producing the same string. Choose delimiters and parameter values that cannot collide.

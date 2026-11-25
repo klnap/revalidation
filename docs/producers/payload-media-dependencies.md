@@ -75,7 +75,3 @@ Unsupported structures are not an error. Pages that reference the media only thr
 ## Automatic detection of the upload collection
 
 Without the `media` option, the producer uses the only upload collection, or the one with slug `media`. If the project has several upload collections and none is named `media`, media tracking is not installed, and nothing is logged. Pass `media` explicitly in that case.
-
-## Verification
-
-`tests/unit/producers/media-discovery.test.ts` covers discovery, `src/producers/payload/media/media-identity.test.ts` covers the parent identifier on media events, and `tests/integration/media-dependents.int.test.ts` saves a media file against a Payload instance on SQLite and checks which post is revalidated.

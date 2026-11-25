@@ -1,34 +1,38 @@
 # Architecture
 
-`@klnap/revalidation` separates four roles. Each role has a defined contract, and each can be used without the others.
+The package separates event production, delivery, interpretation, and cache invalidation:
 
-| Role | Responsibility | Built-in implementation | Import |
-| --- | --- | --- | --- |
-| **Producer** | Emits an event when content changes. | Payload CMS plugin | `@klnap/revalidation/producers/payload` |
-| **Source** | Defines the event item format, validates items, and maps each item to a cache key. | Payload wire format | `@klnap/revalidation/sources/payload` |
-| **Dispatcher** | Delivers events from a producer to a consumer. | HTTP | `@klnap/revalidation/dispatchers/http` |
-| **Consumer** | Matches events to rules, builds cache tags and paths, and invalidates them. | Next.js route handler | `@klnap/revalidation/consumers/next` |
-| **Core** | Framework-independent types, errors and pipeline logic shared by the others. | — | `@klnap/revalidation` |
+```text
+Producer → Dispatcher → Consumer → Cache layers
+                           └─ Source validation and event-to-key mapping
+```
+
+- **Producer:** creates event envelopes when its system changes. Payload CMS is the built-in producer.
+- **Dispatcher:** delivers envelopes. HTTP is the built-in dispatcher; other implementations can satisfy the dispatcher contract.
+- **Consumer:** authenticates and processes envelopes, matches resolved keys to rules, and executes invalidation.
+- **Source:** defines and validates event items, then maps each item to a key used by the consumer's rules. Payload's wire format is the built-in source.
+- **Cache layer:** performs invalidation. The Next.js layer is built in; custom layers can invalidate other caches.
+- **Core:** provides framework-independent event, source, dispatcher, and pipeline contracts.
 
 ## Event flow
 
-1. A producer emits an event: `{ source, data: [item, ...] }`. Items are plain objects.
-2. A dispatcher sends the event to a consumer. The built-in HTTP dispatcher sends one `POST` per event.
-3. The consumer authenticates the request, parses the body, and checks the limits.
-4. For each item, the source validates the shape and resolves a cache key (for example `pages`).
-5. Rules whose key matches that cache key select tags and paths. Tag templates are rendered with parameters from the item.
-6. Layers execute the invalidation: the built-in `next` layer calls `revalidateTag` and `revalidatePath`; custom layers run your `execute` handler.
+1. A producer emits `{ source, data }`, with one item or an array of items.
+2. A dispatcher sends the envelope to a consumer. The built-in HTTP dispatcher sends one request per event.
+3. The consumer authenticates the request and checks its body and item limits.
+4. The named source validates each item and resolves its cache key.
+5. Matching rules render declared tag and path helpers from item parameters.
+6. The selected cache layers run. The built-in Next.js layer calls `revalidateTag` and `revalidatePath`.
 
-## Which parts can be used alone
+## Independent roles
 
-- **Consumer only.** Send the event envelope yourself, with a bearer token, from any system. You need a source for your item shape. See [custom sources](../sources/custom.md).
-- **Consumer and Payload producer.** The default setup in the README.
-- **Core and a custom dispatcher.** Core provides the pipeline; you provide transport.
+- Use the **consumer** without Payload by sending compatible events from any system. Configure a source for the event shape, or use the simple rule form when schema validation is not needed.
+- Use the **Payload producer** with the built-in HTTP dispatcher and a Next.js consumer.
+- Use the **core** contracts with a custom dispatcher or consumer integration.
 
-Dispatchers, sources and layers are the extension points. Producers are implemented by Payload; a custom producer can send the same envelope over HTTP, but the Payload lifecycle helpers are internal. See [extending](../extending.md).
+Payload lifecycle code and internal helpers are not public extension points. See [supported extensions](../extending.md).
 
-## Coupling between components
+## Boundaries
 
-- The producer and the consumer meet only at the wire format: the `source` name and the item shape. Changing a field name in the Payload item (`key`, `locale`, `slug`, …) requires a matching rule or source on the consumer.
-- The consumer's full DSL selects tag parameters through the source definition. Replacing the schema of a source can change which parameters are available.
-- Plugin dispatcher targets are stored per process. A second Payload configuration in the same process replaces the first target.
+The producer and consumer meet at the event envelope. Their source name, item fields, and key mapping must agree. Changing a Payload event field requires a matching consumer source or rule.
+
+The built-in components do not include integrations for other CMSs, transports, frameworks, or cache vendors. Those systems can integrate through the documented producer, source, dispatcher, and cache-layer contracts.

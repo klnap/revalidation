@@ -1,6 +1,6 @@
 # Next.js consumer
 
-The consumer is a Route Handler that accepts revalidation events and expires cache tags and paths. It does not depend on Payload: any system that sends the event envelope can use it.
+The consumer is a Route Handler that accepts revalidation events and invalidates cache tags and paths. It does not depend on Payload: any system that sends a compatible event envelope can use it.
 
 Requires `next >=16.4.5 <17`. Cached functions use Cache Components (`cacheComponents: true` in `next.config`).
 
@@ -34,7 +34,7 @@ export { POST } from '@klnap/revalidation/consumers/next';
 
 ### Module boundaries
 
-- Import the declarations from the route file, or from a module that the route file imports. If the route is in a separate module graph where `defineRevalidation` never ran, `POST` fails with the message above.
+- The registry is module-local runtime state. Import the declarations from the route file, or from a module the route imports. A separate module graph can leave the route unconfigured, which makes `POST` fail with the message above.
 - Import the declarations in server code only. The consumer imports `next/cache`; keep `@/revalidation` out of client components.
 - In development, calling `defineRevalidation` again with the same secret replaces the configuration, and `POST` picks up the new one. In production, repeating the same configuration object reuses its registration; a different object throws. Configure the consumer once.
 
@@ -62,6 +62,8 @@ In the simple form, `invalidate` returns tags only. Use the object form when a r
 
 Parameters come from the event: the item's `locale`, `slug`, `documentId` and other fields that match a template parameter name. Use `params` to compute or rename parameters.
 
+Use `defineRevalidationTags` to create and export tag/path helpers without registering a secret or handler configuration. The Route Handler still needs `defineRevalidation`, or an explicitly configured handler.
+
 ## Event resolution
 
 For each item of an event:
@@ -83,7 +85,7 @@ Unmatched keys are skipped and the request still succeeds.
 
 Set `mode` on the configuration, on a rule, or on a `{ tags, paths, mode }` object. The most specific setting wins: rule, then object, then configuration. `revalidatePath` is called without a profile.
 
-Invalidating a tag marks entries as outdated; it does not rebuild pages or refresh a page that is already open in a browser. The next request after invalidation gets fresh data.
+Invalidating a tag does not eagerly rebuild pages or refresh a page that is already open in a browser. With `expire`, the next cache read waits for regeneration; with `stale`, Next.js may serve stale data while regenerating. The result also depends on the underlying data source.
 
 ## Custom cache layers
 
@@ -134,9 +136,3 @@ See [security](../security.md) for what these checks do not protect against.
 | `resolve` throws | `500` | The error message |
 
 With the simple form, any `source` name is accepted and routed through the `*` rule. Only items that are not objects are skipped.
-
-## Verification status
-
-- The source-repository unit tests cover request handling, tag generation, rule matching and layer execution. Tests are not included in the npm package.
-- The [Quick Start consumer test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/readme-quickstart.test.ts) and [custom source test](https://github.com/klnap/revalidation/blob/main/tests/unit/consumers/next/standalone-source.test.ts) live in the source repository.
-- Module-graph behavior across Route Handlers, instrumentation and Server Components, and production builds, was not exercised against a running Next.js application. Verify it in your application before relying on it.

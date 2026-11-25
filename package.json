@@ -1,16 +1,16 @@
 {
   "name": "@klnap/revalidation",
   "version": "0.2.2",
-  "description": "Event-driven cache revalidation: a Payload CMS producer, pluggable dispatchers, and a Next.js consumer.",
+  "description": "Declarative, type-safe cache revalidation.",
   "keywords": [
-    "payload",
-    "payloadcms",
-    "payload-plugin",
-    "nextjs",
     "revalidation",
     "cache",
-    "revalidatetag",
-    "cache-invalidation"
+    "cache-invalidation",
+    "cache-tags",
+    "type-safe",
+    "event-driven",
+    "nextjs",
+    "payloadcms"
   ],
   "homepage": "https://github.com/klnap/revalidation#readme",
   "bugs": {
@@ -52,7 +52,15 @@
   },
   "files": [
     "dist",
-    "docs",
+    "docs/concepts",
+    "docs/consumers",
+    "docs/dispatchers",
+    "docs/producers",
+    "docs/sources",
+    "docs/extending.md",
+    "docs/reliability.md",
+    "docs/security.md",
+    "docs/troubleshooting.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

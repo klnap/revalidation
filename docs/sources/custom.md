@@ -24,7 +24,7 @@ Every request to the consumer, and every event from the built-in dispatcher, has
 
 ## Defining a custom source
 
-Use the full DSL with `sources` and `layers`. This is the complete example from the README, verified by `tests/unit/consumers/next/standalone-source.test.ts`:
+Use the full DSL with `sources` and `layers` when event items need schema validation:
 
 ```ts
 import * as v from 'valibot';
@@ -78,7 +78,7 @@ defineRevalidation({
 });
 ```
 
-In this form only items that are not objects are skipped; there is no schema validation. Prefer the full DSL when items come from outside your system.
+In this form, no source schema validates the item. Only values that are not objects are skipped before `resolve`. Use the full DSL when incoming event data needs validation.
 
 ## Unknown sources and unmatched keys
 

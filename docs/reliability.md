@@ -1,47 +1,34 @@
 # Reliability
 
-Revalidation has three stages, and only the first two are observable by this package:
-
-1. **Accepted.** The consumer received the event, validated it, and returned `2xx`. The producer's dispatcher reports `accepted`.
-2. **Executed.** The consumer ran each layer for the matched rules: `revalidateTag`, `revalidatePath`, or your `execute` handler.
-3. **Fresh.** The next read of a cached entry returns current content. This depends on Next.js, on your cache lifetimes, and on when the entry is read. It is not measured by this package.
-
-An accepted event does not guarantee that every layer ran; a layer can fail and the request returns `500` (the others still run). A successful layer does not guarantee fresh content for every reader.
+Revalidation has separate stages: a producer creates an event, a dispatcher delivers it, the consumer validates and matches its items, and cache layers perform invalidation. Success at one stage does not guarantee success at the next.
 
 ## Delivery
 
-- Delivery is best-effort. The HTTP dispatcher retries transport errors, timeouts, `429` and `5xx` responses within a deadline (see [HTTP dispatcher](dispatchers/http.md)). After that, the event is logged as failed and dropped.
-- There is no persistent queue. A pending dispatch is held in memory. If the process exits or is frozen before dispatch runs, the event is lost.
-- If the consumer is unavailable for longer than the retry deadline, every event in that window is lost. Cache entries stay stale until their next change or their cache lifetime ends.
+- Delivery is best-effort. The HTTP dispatcher retries transport errors, timeouts, `429`, and `5xx` responses within a deadline. Other non-`2xx` responses are terminal. See [HTTP dispatcher](dispatchers/http.md).
+- There is no persistent queue. A pending dispatch is held in memory and can be lost if the process exits or freezes before it runs.
+- If the consumer stays unavailable beyond the retry deadline, those events are dropped. No background retry recovers them.
+- A consumer `200` means the request was accepted. It can still contain skipped items whose source validation, key resolution, or rule matching failed.
 
-Set a cache lifetime (`cacheLife` in Next.js) on cached data, so stale entries are bounded even when an event is lost.
+## Payload timing
 
-## Timing
+The Payload producer schedules dispatch about one second after a save hook returns. It does not wait for the database transaction to commit. If a save rolls back after its hook ran, the event can still be sent and invalidate tags for content that was not saved.
 
-- The Payload producer dispatches after the save hook returns, one second later. It does not wait for the database transaction to commit.
-- If a save is rolled back after its hook ran, the event is still sent. The consumer then revalidates tags for content that was not saved. This is harmless but unnecessary.
-- Orderable reorders are the exception: they are sent after commit and dropped on rollback.
+Built-in orderable hooks are different: they dispatch after commit and discard reorders on rollback.
 
-## Duplicates and order
+Dispatch failures and event-building read errors are logged without rejecting the Payload save. A read error can lose some or all of that revalidation. Media dependency resolution keeps and dispatches dependents it resolved before a query failure, but does not retry failed scopes.
 
-- A retry can deliver an event that the consumer already processed. A fallback dispatcher can resend events.
-- The consumer does not read content from events. It expires tags and paths, and the next read fetches the current content. A late or repeated event therefore only expires an entry that is refreshed on the next read.
-- Repeated events cost a refresh, not correctness.
+## Cache behavior
 
-## Errors
+The consumer invalidates tags and paths; it does not read content or force pages open in browsers to refresh. With the default `expire` mode, the next read of an invalidated tag waits for regeneration. With `stale`, Next.js may serve stale data while regenerating. See [consumer modes](consumers/next.md#modes).
 
-| Where | Behavior |
-| --- | --- |
-| Read error while building an event | Logged; the save succeeds. Media resolution dispatches completed dependents and logs failed scopes; other producer read failures can lose the whole revalidation. |
-| Dispatch failure after retries, or a non-accepted outcome | Logged; the save succeeds; the event is lost. |
-| Item fails validation, or has no matching rule | Skipped and logged (when a logger is configured); the request succeeds. |
-| A tag or path has a missing parameter | Skipped and logged as `missing_param`; the rest of the item still runs. |
-| A layer fails | Logged; the other layers run; the request returns `500`. |
-| `resolve` throws | The request returns `500`. |
+Cache expiration and stale-while-revalidate are separate from event delivery. A cache lifetime can bound how long data remains cached under the framework's normal behavior, but it does not recover a lost event or prove that the underlying data source is current.
 
-## Limits of this model
+## Duplicates, order, and failures
 
-- No delivery guarantee across restarts or outages.
-- No ordering guarantee between events.
-- No confirmation that a cache entry was regenerated.
-- The producer does not block a save on revalidation.
+- A timeout retry or fallback dispatcher can deliver the same event more than once. The built-in invalidation is repeatable; custom consumers must tolerate duplicates.
+- Events have no ordering guarantee. The consumer invalidates tags and paths, so a late event can trigger another read of current content.
+- Items rejected by a source schema, with an invalid or unmatched key, or missing a required template parameter can be skipped. Skipped items do not make the whole request fail.
+- A layer failure returns `500`; other configured layers still run. The dispatcher may retry the event.
+- A thrown `resolve` callback returns `500`.
+
+There is no guarantee of delivery across restarts or outages, rule execution for skipped items, successful invalidation by every cache layer, or regenerated/fresh data.
