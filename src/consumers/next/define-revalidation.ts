@@ -9,8 +9,8 @@ import type {
 } from './host-types.js'
 
 export type DefinedRevalidation<
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
 > = {
   tags: BuiltTags<TTags>
   paths: BuiltPaths<TPaths>
@@ -18,8 +18,8 @@ export type DefinedRevalidation<
 }
 
 export function defineRevalidation<
-  const TTags extends Record<string, TagTemplate> = {},
-  const TPaths extends Record<string, PathTemplate> = {},
+  const TTags extends Record<string, TagTemplate> = Record<never, never>,
+  const TPaths extends Record<string, PathTemplate> = Record<never, never>,
   TSource extends string = string,
 >(input: DefineRevalidationInput<TTags, TPaths, TSource>): DefinedRevalidation<TTags, TPaths> {
   if (!input.secret) {

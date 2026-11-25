@@ -19,7 +19,7 @@ Dispatch failures and event-building read errors are logged without rejecting th
 
 ## Cache behavior
 
-The consumer invalidates tags and paths; it does not read content or force pages open in browsers to refresh. With the default `expire` mode, the next read of an invalidated tag waits for regeneration. With `stale`, Next.js may serve stale data while regenerating. See [consumer modes](consumers/next.md#modes).
+The consumer invalidates tags and paths; it does not read content or force pages open in browsers to refresh. With the default `expire` mode, the next read of an invalidated tag waits for regeneration. With `stale`, Next.js may serve stale data while regenerating. See [consumer modes](consumers/next.md#revalidation-modes).
 
 Cache expiration and stale-while-revalidate are separate from event delivery. A cache lifetime can bound how long data remains cached under the framework's normal behavior, but it does not recover a lost event or prove that the underlying data source is current.
 

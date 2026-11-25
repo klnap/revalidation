@@ -202,8 +202,8 @@ const validateRule = (
 }
 
 export const compileHostRevalidation = <
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
   TSource extends string = string,
 >(
   input: DefineRevalidationInput<TTags, TPaths, TSource>,

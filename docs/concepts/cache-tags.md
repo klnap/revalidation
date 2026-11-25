@@ -62,4 +62,21 @@ TypeScript does not validate incoming event data, compare templates from separat
 
 At runtime, helper calls with missing or empty parameters throw. For events, a missing rule parameter skips only that tag or path; a configured logger records the skip. Values are not escaped, so choose delimiters that cannot collide with parameter values.
 
+## Helpers without a handler
+
+Code that only needs cache helpers can avoid importing the secret-bearing Route Handler configuration:
+
+```ts
+import { defineRevalidationTags } from '@klnap/revalidation/consumers/next/tags';
+
+export const { tags, paths } = defineRevalidationTags({
+  tags: { project: '[locale]:project:[slug]' },
+  paths: { project: '/[locale]/work/[slug]' },
+});
+```
+
+This helper builds tags and paths only. It does not require a secret, initialize a handler, or import Next.js cache APIs. Keep the templates in a shared object if both this module and `defineRevalidation` need them.
+
+Use these helpers in cached application code. Inside `defineRevalidation`, build rule targets from the `tags` and `paths` passed to its callback; those references belong to that handler configuration.
+
 These types ensure that the cache and rule sides share helper declarations. They do not guarantee event delivery, successful cache-layer execution, cache freshness, or protection from every possible tag collision. See [reliability](../reliability.md).

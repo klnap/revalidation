@@ -98,6 +98,46 @@ describe('simple rules', () => {
     expect(result.layers.cdn?.paths.map((p) => p.value)).toEqual(['/en'])
   })
 
+  it('maps custom parameters and applies per-rule modes over the global mode', () => {
+    const { runtime, config } = compileHostRevalidation({
+      secret: 's',
+      mode: 'expire',
+      tags: {
+        page: '[locale]:page:[projectSlug]',
+        settings: 'settings',
+      },
+      paths: { page: '/[locale]/[projectSlug]' },
+      resolve: (event) => event.key ?? '',
+      params: (event) => ({
+        locale: event.locale,
+        projectSlug: event.slug,
+      }),
+      rules: ({ tags, paths }) => ({
+        pages: {
+          tags: [tags.page],
+          paths: [paths.page],
+          mode: 'stale',
+        },
+        settings: [tags.settings],
+      }),
+    })
+    const result = inspectHostEnvelope(
+      runtime,
+      {
+        source: 'payload',
+        data: [{ key: 'pages', locale: 'fr', slug: 'bonjour' }, { key: 'settings' }],
+      },
+      config.mode ?? 'expire',
+      100,
+    )
+
+    expect(result.layers.next?.tags).toEqual([
+      { value: 'fr:page:bonjour', mode: 'stale' },
+      { value: 'settings', mode: 'expire' },
+    ])
+    expect(result.layers.next?.paths).toEqual([{ value: '/fr/bonjour', mode: 'stale' }])
+  })
+
   it('rejects mixing simple rules with sources', () => {
     expect(() =>
       compileHostRevalidation({

@@ -142,8 +142,8 @@ export type HostLayersInput<
 ) => Record<string, readonly HostLayerRule<TSource>[]>
 
 type DefineRevalidationShared<
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
 > = {
   secret: string
   mode?: CacheMode
@@ -161,8 +161,8 @@ type DefineRevalidationShared<
 }
 
 export type DefineRevalidationInputFull<
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
   TSource extends string = string,
 > = DefineRevalidationShared<TTags, TPaths> & {
   sources: Record<TSource, HostSourceDefinition>
@@ -170,8 +170,8 @@ export type DefineRevalidationInputFull<
 }
 
 export type DefineRevalidationInputRules<
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
 > = DefineRevalidationShared<TTags, TPaths> & {
   /**
    * Maps producer-specific event data to application rule keys.
@@ -183,8 +183,8 @@ export type DefineRevalidationInputRules<
 }
 
 export type DefineRevalidationInput<
-  TTags extends Record<string, TagTemplate> = {},
-  TPaths extends Record<string, PathTemplate> = {},
+  TTags extends Record<string, TagTemplate> = Record<never, never>,
+  TPaths extends Record<string, PathTemplate> = Record<never, never>,
   TSource extends string = string,
 > =
   | DefineRevalidationInputFull<TTags, TPaths, TSource>

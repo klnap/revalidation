@@ -1,7 +1,7 @@
 {
   "name": "@klnap/revalidation",
   "version": "0.2.2",
-  "description": "Declarative, type-safe cache revalidation for Next.js and Payload CMS.",
+  "description": "Declarative, type-safe cache revalidation.",
   "keywords": [
     "revalidation",
     "cache",
@@ -40,6 +40,10 @@
     "./consumers/next": {
       "types": "./dist/consumers/next/index.d.ts",
       "default": "./dist/consumers/next/index.js"
+    },
+    "./consumers/next/tags": {
+      "types": "./dist/consumers/next/tags.d.ts",
+      "default": "./dist/consumers/next/tags.js"
     },
     "./dispatchers": {
       "types": "./dist/dispatchers/index.d.ts",

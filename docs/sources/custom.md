@@ -26,11 +26,13 @@ Every request to the consumer, and every event from the built-in dispatcher, has
 
 Use the full DSL with `sources` and `layers` when event items need schema validation:
 
+Each advanced layer rule has an explicit source key and an `invalidates` target. The simple root-level `rules` map instead keys targets by the resolved event key.
+
 ```ts
 import * as v from 'valibot';
 import { defineRevalidation } from '@klnap/revalidation/consumers/next';
 
-export const { tags } = defineRevalidation({
+export const { tags, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
   tags: { pricing: 'pricing' },
   sources: {
@@ -43,6 +45,13 @@ export const { tags } = defineRevalidation({
     next: [{ key: { webhook: 'pricing' }, invalidates: [tags.pricing] }],
   }),
 });
+```
+
+Re-export this bound handler from the Route Handler:
+
+```ts
+// app/api/revalidate/route.ts
+export { POST } from '@/revalidation';
 ```
 
 Then send an event:

@@ -32,6 +32,7 @@ const publicExports = {
     'defineRevalidation',
     'invalidKey',
   ],
+  './consumers/next/tags': ['defineRevalidationTags'],
   './dispatchers': ['http', 'normalizeTargets', 'resolveRevalidationTargets'],
   './dispatchers/http': ['http'],
 } as const

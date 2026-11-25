@@ -87,3 +87,23 @@ const advancedPaths = defineRevalidation({
   }),
 })
 advancedPaths.paths.homePath({ locale: 'en' })
+
+defineRevalidation({
+  secret: 's',
+  tags: { page: '[locale]:page:[slug]' },
+  paths: { page: '/[locale]/[slug]' },
+  resolve: (event) => event.key ?? 'pages',
+  rules: {
+    layers: {
+      next: ({ tags, paths }) => ({
+        pages: { tags: [tags.page], paths: [paths.page] },
+      }),
+      cdn: ({ tags }) => ({ pages: [tags.page] }),
+    },
+  },
+  execute: {
+    cdn: async ({ tags }) => {
+      tags.map((tag) => tag.value)
+    },
+  },
+})
