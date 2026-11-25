@@ -154,10 +154,14 @@ The `next` layer uses Next.js automatically. Every other layer needs an `execute
 ## Validation and responses
 
 - The `Authorization` header must be `Bearer <secret>`; otherwise the handler returns `401`.
-- Request bodies are limited to 256 KiB by default, with a hard maximum of 16 MiB. Oversized bodies return `400`.
-- Events contain at most 100 items by default, with a hard maximum of 1000. Larger events return `400`.
+- The comparison is constant-time. Anything else gets `401`.
+- Request bodies are limited to 256 KiB by default (`maxBodyBytes`), with a hard maximum of 16 MiB. Oversized bodies return `400`.
+- The handler counts streamed bytes and starts cancellation after the limit; it does not wait for the stream's cancellation promise before returning `400`. The framework owns transport cleanup.
+- Events contain at most 100 items by default (`maxEvents`), with a hard maximum of 1000. Larger events return `400`.
+- `maxEvents` must be at least the producer's chunk size (`maxEventItems` on the HTTP dispatcher, default 100). A larger chunk gets `400`.
 - In the source DSL, each item is validated against its source schema. Invalid items are skipped; an unknown source returns `400`.
 - In the simple `rules` form, the consumer accepts any source name and checks only that each item is an object. Use a source schema when event data needs runtime validation.
 - Items with invalid or unmatched keys are skipped. A `200` response means the request was accepted, not that every cache target was invalidated.
+- Limit values must be integers from 1 through their hard maximum; invalid configuration throws before the app starts.
 
 See [security](../security.md) and [reliability](../reliability.md) for limits and delivery behavior.
