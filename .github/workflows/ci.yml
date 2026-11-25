@@ -59,7 +59,7 @@ jobs:
           TARBALL_DIR: ${{ runner.temp }}
         run: |
           npm pack --pack-destination "$TARBALL_DIR" --json > "$TARBALL_DIR/pack.json"
-          TARBALL="$(node -e 'const path = require("node:path"); const pack = require(process.argv[1])[0]; process.stdout.write(path.join(process.env.TARBALL_DIR, pack.filename));' "$TARBALL_DIR/pack.json")"
+          TARBALL="$(node -e 'const path = require("node:path"); const result = require(process.argv[1]); const pack = Array.isArray(result) ? result[0] : Object.values(result)[0]; process.stdout.write(path.join(process.env.TARBALL_DIR, pack.filename));' "$TARBALL_DIR/pack.json")"
           TARBALL="$TARBALL" node --input-type=module <<'NODE'
           import { execFileSync } from "node:child_process";
           const tarball = process.env.TARBALL;
