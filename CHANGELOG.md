@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- 1ba2679: Replace `invalidate` with declarative `rules` and context-based callbacks. Bind each `POST` handler to
+  its configuration, remove process-wide target registries and obsolete exports, improve tag and path
+  inference, and refresh the Next.js and Payload examples. This intentionally breaks the pre-1.0
+  consumer and HTTP dispatcher APIs.
+
 ## [Unreleased]
 
 ## [0.2.2] - 2026-11-24
