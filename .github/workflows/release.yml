@@ -138,7 +138,7 @@ jobs:
           if (pkg.name !== release.name || pkg.version !== release.version) throw new Error("Tarball identity does not match the Changesets release plan.");
           if (pkg.repository?.url !== `git+${process.env.EXPECTED_REPOSITORY}`) throw new Error("Tarball repository does not match the source repository.");
           if (pkg.private === true || pkg.publishConfig?.access !== "public" || pkg.publishConfig?.registry !== "https://registry.npmjs.org/") throw new Error("Tarball publishing metadata is unsafe.");
-          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./consumers/next/tags", "./dispatchers", "./dispatchers/http"];
+          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./dispatchers", "./dispatchers/http"];
           if (JSON.stringify(Object.keys(pkg.exports ?? {}).sort()) !== JSON.stringify(expectedExports.sort())) throw new Error("Unexpected package exports.");
           const publicDeclarations = [];
           for (const [subpath, targets] of Object.entries(pkg.exports)) {

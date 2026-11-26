@@ -67,7 +67,7 @@ jobs:
           const tarball = process.env.TARBALL;
           const files = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).trim().split("\n");
           const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
-          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./consumers/next/tags", "./dispatchers", "./dispatchers/http"];
+          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./dispatchers", "./dispatchers/http"];
           if (JSON.stringify(Object.keys(manifest.exports ?? {}).sort()) !== JSON.stringify(expectedExports.sort())) throw new Error("Unexpected package exports.");
           const publicDeclarations = [];
           for (const [subpath, targets] of Object.entries(manifest.exports)) {
