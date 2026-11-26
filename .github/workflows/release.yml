@@ -158,7 +158,7 @@ jobs:
             if (obsolete.test(declaration)) throw new Error(`Obsolete API in ${file}.`);
           }
           const readme = execFileSync("tar", ["-xOf", tarball, "package/README.md"], { encoding: "utf8" });
-          if (!readme.includes("Declarative, type-safe cache revalidation.")) throw new Error("README description is incorrect.");
+          if (!readme.includes("Declarative, type-safe cache revalidation across independent producers and consumers.")) throw new Error("README description is incorrect.");
           console.log(`Verified ${release.name}@${release.version} with ${publicDeclarations.length} declarations.`);
           NODE
 
