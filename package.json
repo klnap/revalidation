@@ -77,14 +77,14 @@
     "test:integration": "bun test tests/integration",
     "test:consumer-smoke": "scripts/consumer-smoke.sh",
     "format": "biome format .",
+    "format:write": "biome format --write .",
     "lint": "biome lint .",
     "knip": "knip",
-    "check:package": "publint --strict && attw --pack . --profile esm-only",
-    "check": "bun run format && bun run lint && bun run typecheck && bun run knip && bun run check:boundaries && bun run test && bun run build && bun run check:package",
+    "verify:package": "publint --strict && attw --pack . --profile esm-only",
+    "check": "bun run format && bun run lint && bun run typecheck && bun run knip && bun run check:boundaries && bun run test && bun run verify:package",
     "changeset": "changeset",
     "changeset:version": "changeset version",
-    "changeset:version-check": "bun run check",
-    "prepack": "bun run build",
+    "changeset:version-check": "bun run changeset:version && bun run check",
     "check:boundaries": "depcruise --config dependency-cruiser.config.mjs --output-type err-long src"
   },
   "peerDependencies": {
@@ -103,18 +103,18 @@
     "valibot": "^1.4.0"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "^0.18.5",
+    "@arethetypeswrong/cli": "0.18.5",
     "@biomejs/biome": "2.6.8",
     "@changesets/cli": "3.0.3",
     "@payloadcms/db-sqlite": "3.94.1",
-    "@swc/core": "^1",
-    "@types/bun": "^1.4.4",
-    "dependency-cruiser": "^18.8.0",
-    "knip": "^6.48.0",
+    "@swc/core": "1.16.22",
+    "@types/bun": "1.4.5",
+    "dependency-cruiser": "18.9.0",
+    "knip": "6.48.0",
     "next": "16.4.6",
     "npm": "12.2.3",
     "payload": "3.94.1",
-    "publint": "^0.3.25",
+    "publint": "0.3.25",
     "typescript": "7.0.2"
   },
   "engines": {

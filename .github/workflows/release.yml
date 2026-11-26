@@ -51,7 +51,7 @@ jobs:
       - uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           github-token: ${{ github.token }}
-          script: sh -c "bun run changeset:version && bun run changeset:version-check"
+          script: bun run changeset:version-check
           pr-title: "chore(release): version packages"
           commit-message: "chore(release): version packages"
           pr-base-branch: main

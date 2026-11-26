@@ -218,7 +218,7 @@ For schema-validated event sources, use the advanced `sources` and `layers` DSL.
 - `bun run test:integration` runs Payload database integration tests.
 - `bun run test:consumer-smoke -- <tarball>` runs the Payload and production Next.js integration smoke test.
 
-CI runs package-level checks and packed export validation. It does not run database integration or production framework-runtime tests.
+CI runs these checks, Payload integration tests, packed-package type and runtime checks across the minimum supported Node.js versions, and the production Next.js consumer smoke test.
 
 ## License
 

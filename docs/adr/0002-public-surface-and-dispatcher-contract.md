@@ -20,7 +20,7 @@ Defined in `package.json` `exports` (do not deep-import `src/`):
 
 The package manifest defines the explicit public export map.
 
-Exports point to compiled `dist/` entry points. The `prepack` lifecycle builds those files before packaging.
+Exports point to compiled `dist/` entry points. Run `bun run build` before packing; the package lifecycle does not rebuild them. CI verifies the built output and packs that same artifact, preventing a second build during release preparation.
 
 ## Dispatcher contract
 
