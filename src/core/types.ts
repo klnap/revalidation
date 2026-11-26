@@ -1,13 +1,10 @@
+import type { CloudEvent } from './cloudevents.js'
+
 export type CacheMode = 'stale' | 'expire'
 
 export type CacheEntry = {
   value: string
   mode: CacheMode
-}
-
-export type CacheEvent = {
-  source: string
-  data: unknown
 }
 
 export type CacheResolverOutput =
@@ -41,37 +38,39 @@ export type InspectResult = {
 export type DispatchError = {
   code: string
   message: string
-  cause?: unknown
 }
 
+export type DeliveryStatus = 'accepted' | 'rejected' | 'failed' | 'unknown'
+
 export type TargetDispatchResult = {
-  targetIndex: number
-  status: DispatchOutcome['status']
+  target: string
+  deliveryId: string
+  status: DeliveryStatus
+  attempts: number
   error?: DispatchError
 }
 
 export type DispatchOutcome =
-  | { status: 'accepted'; deliveryIds?: string[]; results?: TargetDispatchResult[] }
-  | { status: 'rejected'; error: DispatchError; results?: TargetDispatchResult[] }
-  | { status: 'failed'; error: DispatchError; results?: TargetDispatchResult[] }
-  | { status: 'unknown'; error: DispatchError; results?: TargetDispatchResult[] }
+  | { status: 'accepted'; results: readonly TargetDispatchResult[] }
+  | { status: 'partial'; results: readonly TargetDispatchResult[] }
+  | {
+      status: 'rejected' | 'failed' | 'unknown'
+      results: readonly TargetDispatchResult[]
+    }
 
 export type DispatchInput = {
-  events: CacheEvent[]
-  deduplicationId?: string
+  events: readonly CloudEvent[]
+  /** Manual override; this narrows configured targets and never bypasses target filters. */
+  targets?: readonly string[]
 }
 
 export type Dispatcher = {
   dispatch(input: DispatchInput): Promise<DispatchOutcome>
   /**
-   * Most items the receiving consumer accepts in one event. The producer splits larger change sets
-   * into events of this size. Omitted means the default (100). Must not exceed the consumer's limit.
+   * Most CloudEvents sent in one target request. Omitted means the default (100).
    */
   maxEventItems?: number
 }
-
-/** Alias for dispatcher factory return type. */
-export type DispatcherFunction = Dispatcher
 
 export type Logger = {
   debug?: (entry: Record<string, unknown>, message: string) => void

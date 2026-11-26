@@ -1,9 +1,7 @@
-import type { PayloadRevalidationItem } from '../../sources/payload/index.js'
+import type { LegacyPayloadItem } from './legacy-payload-schema.js'
 import type { RevalidationEvent, TagParamsBag } from './host-types.js'
 
-export const defaultPayloadParams = (
-  event: RevalidationEvent<PayloadRevalidationItem>,
-): TagParamsBag => {
+export const defaultPayloadParams = (event: RevalidationEvent<LegacyPayloadItem>): TagParamsBag => {
   const item = event.item
   return {
     locale: item.locale,

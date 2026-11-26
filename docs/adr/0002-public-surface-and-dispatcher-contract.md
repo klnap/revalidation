@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADRs 0003–0005 and the 0.4.0 specification.
 
 ## Public subpaths
 
@@ -10,27 +10,26 @@ Defined in `package.json` `exports` (do not deep-import `src/`):
 
 | Subpath | Purpose |
 | :--- | :--- |
-| `@klnap/revalidation` | Core pipeline, errors, dispatch outcome helpers |
-| `@klnap/revalidation/sources/payload` | Canonical Payload item schema + `payloadRevalidationSource()` |
+| `@klnap/revalidation` | CloudEvents, selectors, schemas, errors, and dispatch outcome helpers |
+| `@klnap/revalidation/sources/payload` | Payload CloudEvents source URI and Standard Schema |
 | `@klnap/revalidation/producers/payload` | `revalidation()` Payload plugin |
-| `@klnap/revalidation/consumers/next` | `defineRevalidation`, `invalidKey` |
-| `@klnap/revalidation/consumers/next/tags` | Cache tag and path helper generation |
+| `@klnap/revalidation/consumers/next` | `defineRevalidation` |
 | `@klnap/revalidation/dispatchers` | Barrel (prefer transport subpaths for tree shaking) |
 | `@klnap/revalidation/dispatchers/http` | HTTP dispatcher only |
 
 The package manifest defines the explicit public export map.
 
-Exports point to compiled `dist/` entry points. The `prepack` lifecycle builds those files before packaging.
+Exports point to compiled `dist/` entry points. Run `bun run build` before packing; the package lifecycle does not rebuild them. CI verifies the built output and packs that same artifact, preventing a second build during release preparation.
 
 ## Dispatcher contract
 
-Every transport implements `Dispatcher.dispatch()` and **returns** `DispatchOutcome` (never throws).
-
-Semantics: `accepted` | `rejected` | `failed` | `unknown` — see `core/types.ts`.
+The historical export and dispatcher contract was replaced by the CloudEvents contract in ADRs
+0003–0005. See the 0.4.0 specification and package manifest for the current surface.
 
 ## Peer dependencies
 
-`payload` and `next` are optional peer dependencies. `valibot` is a runtime dependency of the package (pipeline and wire schemas).
+`payload` and `next` are optional peer dependencies. `@standard-schema/spec` defines the schema
+interface; Valibot provides the built-in Payload schema.
 
 ## Runtime
 

@@ -31,7 +31,7 @@ describe('revalidation plugin', () => {
     const plugin = revalidation({
       dispatcher: {
         default: {
-          dispatch: async () => ({ status: 'accepted' as const }),
+          dispatch: async () => ({ status: 'accepted' as const, results: [] }),
         },
       },
     })
@@ -57,7 +57,7 @@ describe('revalidation plugin', () => {
   it('preserves host collections and endpoints without adding queue infrastructure', () => {
     const endpoint = { path: '/host-endpoint', method: 'get' } as never
     const plugin = revalidation({
-      dispatcher: { dispatch: async () => ({ status: 'accepted' as const }) },
+      dispatcher: { dispatch: async () => ({ status: 'accepted' as const, results: [] }) },
     })
     const config = plugin({
       collections: [{ slug: 'host-collection', fields: [] }],
@@ -72,7 +72,7 @@ describe('revalidation plugin', () => {
   it('rejects applying the plugin twice instead of duplicating revalidation hooks', () => {
     const plugin = revalidation({
       dispatcher: {
-        dispatch: async () => ({ status: 'accepted' as const }),
+        dispatch: async () => ({ status: 'accepted' as const, results: [] }),
       },
     })
     const once = plugin({
@@ -87,13 +87,18 @@ describe('revalidation plugin', () => {
     const primary = {
       dispatch: async (_input: unknown) => {
         calls.push('default')
-        return { status: 'failed' as const, error: { code: 'X', message: 'fail' } }
+        return {
+          status: 'failed' as const,
+          results: [
+            { target: 'website', deliveryId: 'wh_1', status: 'failed' as const, attempts: 1 },
+          ],
+        }
       },
     }
     const fallback = {
       dispatch: async (_input: unknown) => {
         calls.push('fallback')
-        return { status: 'accepted' as const }
+        return { status: 'accepted' as const, results: [] }
       },
     }
     const plugin = revalidation({
@@ -138,7 +143,7 @@ describe('revalidation plugin', () => {
     const fallback = {
       dispatch: async (_input: unknown) => {
         calls.push('fallback')
-        return { status: 'accepted' as const }
+        return { status: 'accepted' as const, results: [] }
       },
     }
     const plugin = revalidation({

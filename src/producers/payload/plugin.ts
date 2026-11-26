@@ -48,6 +48,8 @@ export type PluginSchemaExcludeConfig = {
 
 export type PayloadRevalidationPluginConfig = {
   dispatcher: DispatcherSelection
+  /** Absolute CloudEvents source URI. Defaults to `urn:klnap:revalidation:payload`. */
+  source?: string
   /**
    * Upload collection for media-dependent hooks (optional).
    * Omitted → auto: only upload collection, or slug `media` among uploads.
@@ -171,7 +173,24 @@ const validateRevalidationExcludeFieldsOnConfig = (
  */
 export function revalidation(config: PayloadRevalidationPluginConfig): Plugin {
   const enabled = config.enabled !== false
-  const dispatcher = resolveDispatcher(config.dispatcher)
+  const resolvedDispatcher = resolveDispatcher(config.dispatcher)
+  if (config.source) {
+    try {
+      new URL(config.source)
+    } catch {
+      throw new TypeError('revalidation: source must be an absolute URI')
+    }
+  }
+  const dispatcher: Dispatcher = config.source
+    ? {
+        maxEventItems: resolvedDispatcher.maxEventItems,
+        dispatch: (input) =>
+          resolvedDispatcher.dispatch({
+            ...input,
+            events: input.events.map((event) => ({ ...event, source: config.source! })),
+          }),
+      }
+    : resolvedDispatcher
   const pluginExcludeFields = config.excludeFields
   const pluginCollectionExcludeFields = buildPluginExcludeFieldsBySlug(config.collections)
   const pluginGlobalExcludeFields = buildPluginExcludeFieldsBySlug(config.globals)

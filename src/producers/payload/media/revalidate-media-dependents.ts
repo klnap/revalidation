@@ -97,7 +97,22 @@ const updateAfterChange = async (
   const posted = uniqueLocalesFromChanges(changes.map((c) => c.locale))
   logRevalidateDispatch(req.payload.logger, subject, posted)
 
-  await dispatchRevalidationChanges({ req, changes, logger: req.payload.logger, dispatcher })
+  await dispatchRevalidationChanges({
+    req,
+    changes: [
+      {
+        root: true,
+        type: 'collection',
+        slug: collection.slug,
+        operation,
+        locale: changes[0]!.locale,
+        doc: doc as Record<string, unknown>,
+      },
+      ...changes,
+    ],
+    logger: req.payload.logger,
+    dispatcher,
+  })
 }
 
 export const createRevalidateMediaDependentsAfterChange = (
@@ -141,7 +156,22 @@ export const createRevalidateMediaDependentsBeforeDelete = (
       const posted = uniqueLocalesFromChanges(changes.map((c) => c.locale))
       logRevalidateDispatch(req.payload.logger, subject, posted)
 
-      await dispatchRevalidationChanges({ req, changes, logger: req.payload.logger, dispatcher })
+      await dispatchRevalidationChanges({
+        req,
+        changes: [
+          {
+            root: true,
+            type: 'collection',
+            slug: collection.slug,
+            operation: 'delete',
+            locale: changes[0]!.locale,
+            doc: { id },
+          },
+          ...changes,
+        ],
+        logger: req.payload.logger,
+        dispatcher,
+      })
     } catch (error) {
       revalidationLogError(req.payload.logger, errorDetail(error), 'build')
     }

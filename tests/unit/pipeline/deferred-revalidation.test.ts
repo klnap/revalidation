@@ -26,7 +26,10 @@ describe('deferRevalidationUntilCommit', () => {
   it('dispatches deduplicated changes only when the owner flushes after commit', async () => {
     const req: { context: Record<string, unknown> } = { context: {} }
     const dispatcher = {
-      dispatch: mock(async (_input: DispatchInput) => ({ status: 'accepted' as const })),
+      dispatch: mock(async (_input: DispatchInput) => ({
+        status: 'accepted' as const,
+        results: [],
+      })),
     }
     const change: RevalidationChange = {
       type: 'collection',
@@ -47,13 +50,22 @@ describe('deferRevalidationUntilCommit', () => {
     expect(dispatcher.dispatch).not.toHaveBeenCalled()
     await deferral.flush()
     expect(dispatcher.dispatch).toHaveBeenCalledTimes(1)
-    expect(dispatcher.dispatch.mock.calls[0]?.[0].events[0]?.data).toHaveLength(1)
+    expect(
+      (
+        dispatcher.dispatch.mock.calls[0]![0].events[0]!.data as {
+          affected: unknown[]
+        }
+      ).affected,
+    ).toHaveLength(1)
   })
 
   it('discards deferred changes after rollback', async () => {
     const req: { context: Record<string, unknown> } = { context: {} }
     const dispatcher = {
-      dispatch: mock(async (_input: DispatchInput) => ({ status: 'accepted' as const })),
+      dispatch: mock(async (_input: DispatchInput) => ({
+        status: 'accepted' as const,
+        results: [],
+      })),
     }
     const deferral = deferRevalidationUntilCommit(req)
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
 import { processHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
-import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
+import { legacyPayloadItemSchema as payloadRevalidationItemSchema } from '../../../../src/consumers/next/legacy-payload-schema'
 
 describe('processHostEnvelope prepare', () => {
   it('runs rule.prepare only for matched rule', async () => {

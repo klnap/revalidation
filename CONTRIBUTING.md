@@ -9,14 +9,17 @@ TypeScript consumers need TypeScript `>=5.0`.
 
 ```sh
 bun install --frozen-lockfile
-bun run lint && bun run typecheck && bun run knip && bun run check:boundaries && bun test && bun run build && bun run check:package
+bun run check
+bun run test:integration
 ```
 
-`bun run typecheck` builds the package and checks public declarations through its export paths. `bun test` runs unit, contract, and temporary SQLite integration tests. Behavior changes need a regression test.
+`bun run check` formats and lints the repository, typechecks source and public declarations, checks dependencies and module boundaries, runs unit and contract tests, builds the package, and validates its package metadata and types.
 
-`scripts/consumer-smoke.sh <tarball>` installs the built artifact in a clean project, exercises the Payload producer, and verifies real Next.js production cache invalidation, including a chunked oversized-body response. CI runs it against the current pinned integration versions.
+`bun run test:integration` runs Payload tests against SQLite. Behavior changes need a regression test.
 
-CI runs tests, checks the package, and scans dependencies and workflows. Fork pull requests scan without SARIF upload; trusted pushes upload results with `security-events: write`. The CI workflow can also be run manually for a selected branch or tag.
+To verify a packed package in a clean consumer, first build and pack it, then run `bun run test:consumer-smoke -- <tarball>`. The smoke test exercises the Payload producer and real Next.js production cache invalidation.
+
+CI runs the unit, contract, Payload integration, and packed-consumer checks. It checks packed runtime imports on the minimum supported Node.js versions and runs the production Next.js smoke test on Node.js 24. Dependency and workflow scans run separately.
 
 ## Commits
 
@@ -24,4 +27,6 @@ Use [Conventional Commits](https://www.conventionalcommits.org). Add a `CHANGELO
 
 ## Releases
 
-Maintainers only. Tag `vX.Y.Z` on `main` after a `chore: release X.Y.Z` pull request; `.github/workflows/release.yml` validates and publishes. npm Trusted Publishing and provenance eligibility must be configured by repository owners; CI does not test those external settings.
+Maintainers only. Add a changeset for consumer-visible changes. After merge, `.github/workflows/release.yml` opens or updates the version pull request. Merge it to publish the verified tarball, create the Git tag, and create the GitHub Release.
+
+npm Trusted Publishing must bind `klnap/revalidation`, `.github/workflows/release.yml`, and the `npm` environment. The publish job uses GitHub OIDC and requires no npm token. Repository owners must configure and verify this external setting; workflow checks alone do not prove it works.

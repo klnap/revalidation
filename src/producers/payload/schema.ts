@@ -1,31 +1,42 @@
-import type { CacheEvent } from '../../core/index.js'
-import type { PayloadRevalidationItem } from '../../sources/payload/index.js'
+import type { CloudEvent } from '../../core/cloudevents.js'
+import type { RevalidationResource } from '../../core/event-selector.js'
+import { payloadEventType, payloadSource } from '../../sources/payload/index.js'
 import type { RevalidationChange } from './lifecycle/types.js'
 
-export type { PayloadRevalidationItem }
-
-const readSlug = (doc: Record<string, unknown> | undefined): string | undefined => {
-  const slug = doc?.slug
-  return typeof slug === 'string' && slug.length > 0 ? slug : undefined
+const resourceFor = (change: RevalidationChange): RevalidationResource => {
+  const id = change.doc.id
+  const slug =
+    change.routeSlug ?? (typeof change.doc.slug === 'string' ? change.doc.slug : undefined)
+  return {
+    type: change.type === 'collection' ? 'payload.collection' : 'payload.global',
+    name: change.slug,
+    ...(typeof id === 'string' || typeof id === 'number' ? { id: String(id) } : {}),
+    locale: change.locale,
+    ...(slug ? { slug } : {}),
+    ...(change.identifiers ? { identifiers: change.identifiers } : {}),
+  }
 }
 
-export const changesToRevalidationItems = (
+export const changesToRevalidationEvent = (
   changes: RevalidationChange[],
-): PayloadRevalidationItem[] =>
-  changes.map((change) => {
-    const id = change.doc.id
-    return {
-      operation: change.operation,
-      locale: change.locale,
-      key: change.slug,
-      ...(change.type === 'collection' ? { collection: change.slug } : { global: change.slug }),
-      slug: change.type === 'collection' ? (change.routeSlug ?? readSlug(change.doc)) : undefined,
-      documentId: typeof id === 'string' || typeof id === 'number' ? String(id) : undefined,
-      ...(change.identifiers ? { identifiers: change.identifiers } : {}),
-    }
-  })
-
-export const changesToRevalidationEvent = (changes: RevalidationChange[]): CacheEvent => ({
-  source: 'payload',
-  data: changesToRevalidationItems(changes),
-})
+  source = payloadSource,
+): CloudEvent => {
+  const root = changes.find((change) => change.root) ?? changes[0]
+  if (!root) throw new Error('Cannot create a Payload CloudEvent without changes')
+  return {
+    specversion: '1.0',
+    id: `rev_${crypto.randomUUID()}`,
+    source,
+    type: payloadEventType,
+    time: new Date().toISOString(),
+    datacontenttype: 'application/json',
+    data: {
+      operation: root.operation,
+      resource: resourceFor(root),
+      affected: changes.map((change) => ({
+        operation: change.operation,
+        resource: resourceFor(change),
+      })),
+    },
+  }
+}

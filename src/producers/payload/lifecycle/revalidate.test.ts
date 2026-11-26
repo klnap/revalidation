@@ -349,7 +349,18 @@ describe('revalidate', () => {
 
   const createTestRevalidate = async (targets: Array<{ url: string; secret: string }>) => {
     const { http } = await import('../../../dispatchers/http/index.js')
-    const dispatcher = http({ target: targets })
+    const dispatcher = http({
+      targets: Object.fromEntries(
+        targets.map((target, index) => [
+          `target-${index}`,
+          {
+            ...target,
+            secret: `whsec_${Buffer.from(target.secret).toString('base64')}`,
+          },
+        ]),
+      ),
+      allowInsecure: true,
+    })
     return (args: RevalidateArgs) => runCommitted(args, dispatcher)
   }
 
@@ -416,8 +427,8 @@ describe('revalidate', () => {
     const body = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     )
-    expect(body.source).toBe('payload')
-    expect(Array.isArray(body.data)).toBe(true)
+    expect(body.source).toBe('urn:klnap:revalidation:payload')
+    expect(Array.isArray(body.data.affected)).toBe(true)
     expect(loggerError).toHaveBeenCalled()
   })
 
@@ -455,14 +466,14 @@ describe('revalidate', () => {
         previousDoc: { id: '1', title: 'Previous', _status: 'published' },
         collection: { slug: 'projects', versions: { drafts: true } },
       } as unknown as RevalidateArgs,
-      { dispatch: async () => ({ status: 'accepted' }) },
+      { dispatch: async () => ({ status: 'accepted', results: [] }) },
     )
 
     expect(findVersions).toHaveBeenCalled()
     expect(findVersions.mock.calls.every(([options]) => options.req === req)).toBe(true)
   })
 
-  it('POSTs to every configured target with matching Bearer tokens', async () => {
+  it('POSTs to every configured target with independent Standard Webhooks signatures', async () => {
     const revalidate = await createTestRevalidate([
       { url: 'http://web.test/api/revalidate', secret: 'web-secret' },
       { url: 'http://preview.test/api/revalidate', secret: 'preview-secret' },
@@ -496,12 +507,18 @@ describe('revalidate', () => {
     // Main target: one attempt. Preview 500s is retried twice: 1 + 3.
     expect(fetchMock).toHaveBeenCalledTimes(4)
 
-    const calls = fetchMock.mock.calls as unknown as Array<
-      [string, { headers: Record<string, string> }]
-    >
-    const byUrl = Object.fromEntries(calls.map(([url, init]) => [url, init.headers.Authorization]))
-    expect(byUrl['http://web.test/api/revalidate']).toBe('Bearer web-secret')
-    expect(byUrl['http://preview.test/api/revalidate']).toBe('Bearer preview-secret')
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+    const byUrl = Object.fromEntries(
+      calls.map(([url, init]) => {
+        const headers = new Headers(init.headers)
+        return [url, headers]
+      }),
+    )
+    expect(byUrl['http://web.test/api/revalidate']?.get('webhook-id')).toMatch(/^wh_/)
+    expect(byUrl['http://web.test/api/revalidate']?.get('webhook-signature')).toMatch(/^v1,/)
+    expect(byUrl['http://preview.test/api/revalidate']?.get('webhook-id')).toMatch(/^wh_/)
+    expect(byUrl['http://preview.test/api/revalidate']?.get('webhook-signature')).toMatch(/^v1,/)
+    expect(byUrl['http://web.test/api/revalidate']?.get('authorization')).toBeNull()
     expect(loggerError).toHaveBeenCalledTimes(1)
   })
 
@@ -597,15 +614,15 @@ describe('revalidate', () => {
     } as unknown as RevalidateArgs)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const envelope = JSON.parse(
+    const event = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     ) as {
       source: string
-      data: Array<{ locale: string; previousSlug?: string; global?: string }>
+      data: { affected: { resource: { locale: string; name?: string } }[] }
     }
-    expect(envelope.source).toBe('payload')
-    expect(envelope.data.map((c) => c.locale)).toEqual(['pl', 'en', 'de'])
-    expect(envelope.data.every((c) => c.global === 'work-page')).toBe(true)
+    expect(event.source).toBe('urn:klnap:revalidation:payload')
+    expect(event.data.affected.map((change) => change.resource.locale)).toEqual(['pl', 'en', 'de'])
+    expect(event.data.affected.every((change) => change.resource.name === 'work-page')).toBe(true)
   })
 
   it('publish-all: dispatches published locales even when content unchanged', async () => {
@@ -666,8 +683,12 @@ describe('revalidate', () => {
 
     const envelope = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
-    ) as { data: Array<{ locale: string }> }
-    expect(envelope.data.map((c) => c.locale)).toEqual(['pl', 'en', 'de'])
+    ) as { data: { affected: { resource: { locale: string } }[] } }
+    expect(envelope.data.affected.map((change) => change.resource.locale)).toEqual([
+      'pl',
+      'en',
+      'de',
+    ])
   })
 
   it('no-ops on draft saves', async () => {
@@ -715,7 +736,10 @@ describe('revalidate', () => {
     globalThis.fetch = fetchMock
 
     const saveAt = '2026-01-01T12:00:30.000Z'
-    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const dispatcher = http({
+      targets: { website: { url: 'http://frontend.test/api/revalidate', secret: 'whsec_cw==' } },
+      allowInsecure: true,
+    })
 
     await runCommitted(
       {
@@ -766,7 +790,10 @@ describe('revalidate', () => {
     globalThis.fetch = fetchMock
 
     const saveAt = '2026-01-01T12:00:00.000Z'
-    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const dispatcher = http({
+      targets: { website: { url: 'http://frontend.test/api/revalidate', secret: 'whsec_cw==' } },
+      allowInsecure: true,
+    })
 
     await runCommitted(
       {
@@ -825,7 +852,10 @@ describe('revalidate', () => {
     globalThis.fetch = fetchMock
 
     const saveAt = '2026-01-01T12:00:00.000Z'
-    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const dispatcher = http({
+      targets: { website: { url: 'http://frontend.test/api/revalidate', secret: 'whsec_cw==' } },
+      allowInsecure: true,
+    })
 
     await runCommitted(
       {
@@ -888,7 +918,10 @@ describe('revalidate', () => {
     globalThis.fetch = fetchMock
 
     const saveAt = '2026-01-01T12:00:00.000Z'
-    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const dispatcher = http({
+      targets: { website: { url: 'http://frontend.test/api/revalidate', secret: 'whsec_cw==' } },
+      allowInsecure: true,
+    })
 
     const localeDocs: Record<string, Record<string, unknown>> = {
       pl: { id: '1', title: 'Projekt', slug: 'pl-nowy', _status: 'published' },
@@ -956,13 +989,17 @@ describe('revalidate', () => {
     const body = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     )
-    const postedLocales = body.data.map((row: { locale: string }) => row.locale)
+    const postedLocales = body.data.affected.map(
+      (row: { resource: { locale: string } }) => row.resource.locale,
+    )
     expect(postedLocales).toContain('pl')
     expect(postedLocales).toContain('en')
     expect(postedLocales).toContain('de')
-    const enRows = body.data.filter((row: { locale: string }) => row.locale === 'en')
+    const enRows = body.data.affected.filter(
+      (row: { resource: { locale: string } }) => row.resource.locale === 'en',
+    )
     expect(enRows).toHaveLength(1)
-    expect(enRows[0]?.slug).toBe('en-slug')
+    expect(enRows[0]?.resource.slug).toBe('en-slug')
   })
 
   it('finds the previous published identifier beyond the first versions page', async () => {
@@ -970,7 +1007,10 @@ describe('revalidate', () => {
     const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200 }))
     // @ts-expect-error test double
     globalThis.fetch = fetchMock
-    const dispatcher = http({ target: { url: 'http://frontend.test/api/revalidate', secret: 's' } })
+    const dispatcher = http({
+      targets: { website: { url: 'http://frontend.test/api/revalidate', secret: 'whsec_cw==' } },
+      allowInsecure: true,
+    })
     const localeDocs: Record<string, Record<string, unknown>> = {
       pl: { id: '1', title: 'Projekt', slug: 'pl-new', _status: 'published' },
       en: { id: '1', title: 'Project', slug: 'en-slug', _status: 'published' },
@@ -1039,9 +1079,13 @@ describe('revalidate', () => {
     const body = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     )
-    expect(body.data.map((item: { locale: string }) => item.locale)).toEqual(
-      expect.arrayContaining(['pl', 'en', 'de']),
-    )
-    expect(body.data.some((item: { slug: string }) => item.slug === 'pl-old')).toBe(true)
+    expect(
+      body.data.affected.map((item: { resource: { locale: string } }) => item.resource.locale),
+    ).toEqual(expect.arrayContaining(['pl', 'en', 'de']))
+    expect(
+      body.data.affected.some(
+        (item: { resource: { slug?: string } }) => item.resource.slug === 'pl-old',
+      ),
+    ).toBe(true)
   })
 })

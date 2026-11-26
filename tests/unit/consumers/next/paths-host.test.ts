@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
 import { inspectHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
-import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
+import { legacyPayloadItemSchema as payloadRevalidationItemSchema } from '../../../../src/consumers/next/legacy-payload-schema'
 
 describe('host paths', () => {
   it('collects paths from invalidates object', () => {

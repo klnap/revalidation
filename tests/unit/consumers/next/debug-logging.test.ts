@@ -6,7 +6,7 @@ import {
   logRevalidationDebug,
 } from '../../../../src/consumers/next/create-cache'
 import type { InspectResult } from '../../../../src/core'
-import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
+import { legacyPayloadItemSchema as payloadRevalidationItemSchema } from '../../../../src/consumers/next/legacy-payload-schema'
 
 describe('revalidation debug logging', () => {
   it('logRevalidationDebug calls logger.debug with cacheKeys and layer tags', () => {

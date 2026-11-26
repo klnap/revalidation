@@ -4,5 +4,5 @@ dist/
 coverage/
 *.tsbuildinfo
 *.tgz
-.env
-.env.*
+.env*
+.DS_Store

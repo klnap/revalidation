@@ -21,7 +21,15 @@ describe('producer fail-open dispatch', () => {
         dispatcher: {
           dispatch: async () => ({
             status: 'failed',
-            error: { code: 'HTTP_DISPATCH_ERROR', message: 'network down' },
+            results: [
+              {
+                target: 'website',
+                deliveryId: 'wh_1',
+                status: 'failed',
+                attempts: 1,
+                error: { code: 'HTTP_DISPATCH_ERROR', message: 'network down' },
+              },
+            ],
           }),
         },
       }),

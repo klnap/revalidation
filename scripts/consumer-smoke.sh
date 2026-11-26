@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Installs the packed tarball and tests Payload plus a Next.js production cache.
-# Usage: scripts/consumer-smoke.sh <path-to-tarball>
+# Usage: scripts/consumer-smoke.sh [path-to-tarball]
 set -euo pipefail
-tarball="$(realpath "$1")"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pack_work=''
+if [[ -n "${1:-}" ]]; then
+  tarball="$(realpath "$1")"
+else
+  pack_work="$(mktemp -d)"
+  (cd "$repo_root" && npm pack --pack-destination "$pack_work" --silent >/dev/null)
+  tarball="$pack_work/$(node -p "require('$repo_root/package.json').name.replace('@','').replace('/','-')")-$(node -p "require('$repo_root/package.json').version").tgz"
+fi
 next_version="${NEXT_VERSION:-$(node -e 'console.log(require(process.argv[1]).devDependencies.next)' "$repo_root/package.json")}"
 payload_version="$(node -e 'console.log(require(process.argv[1]).devDependencies.payload)' "$repo_root/package.json")"
 sqlite_version="$(node -e "console.log(require(process.argv[1]).devDependencies['@payloadcms/db-sqlite'])" "$repo_root/package.json")"
@@ -16,8 +23,30 @@ cleanup() {
     wait "$next_pid" 2>/dev/null || true
   fi
   rm -rf "$work"
+  if [[ -n "$pack_work" ]]; then rm -rf "$pack_work"; fi
 }
 trap cleanup EXIT
+cd "$work"
+mkdir -p "$work/minimal"
+cd "$work/minimal"
+cat > package.json <<'JSON'
+{ "name": "consumer-smoke-minimal", "private": true, "type": "module" }
+JSON
+npm install --no-audit --no-fund "$tarball" >/dev/null
+cat > minimal-smoke.mjs <<'JS'
+import assert from 'node:assert/strict'
+import * as core from '@klnap/revalidation'
+import { http } from '@klnap/revalidation/dispatchers/http'
+import { payloadSchema } from '@klnap/revalidation/sources/payload'
+
+assert.equal(typeof core, 'object')
+assert.equal(typeof http, 'function')
+assert.equal(typeof payloadSchema['~standard'].validate, 'function')
+assert.equal(await import('next/cache.js').then(() => true, () => false), false)
+assert.equal(await import('payload').then(() => true, () => false), false)
+console.log('optional peer isolation OK')
+JS
+node minimal-smoke.mjs
 cd "$work"
 cat > package.json <<'JSON'
 { "name": "consumer-smoke", "private": true, "type": "module" }
@@ -25,38 +54,68 @@ JSON
 npm install --no-audit --no-fund \
   "$tarball" "payload@$payload_version" "@payloadcms/db-sqlite@$sqlite_version" "next@$next_version" \
   react@19.3.1 react-dom@19.3.1 graphql@16.15.0 >/dev/null
+cp "$repo_root/tests/fixtures/consumer/consumer.mts" "$work/consumer.mts"
+cp "$repo_root/tests/fixtures/consumer/runtime.mjs" "$work/runtime.mjs"
+cat > "$work/consumer-tsconfig.json" <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["consumer.mts"]
+}
+JSON
+"$repo_root/node_modules/.bin/tsc" --project "$work/consumer-tsconfig.json"
+node "$work/runtime.mjs"
 cat > smoke.mjs <<'JS'
 import assert from 'node:assert/strict'
-import { createPipeline } from '@klnap/revalidation'
-import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next'
+import { defineRevalidation } from '@klnap/revalidation/consumers/next'
 import { http } from '@klnap/revalidation/dispatchers/http'
 import { revalidation } from '@klnap/revalidation/producers/payload'
-import { payloadRevalidationSource } from '@klnap/revalidation/sources/payload'
+import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { buildConfig, getPayload } from 'payload'
 
-assert.equal(typeof createPipeline, 'function')
 assert.equal(typeof defineRevalidation, 'function')
 assert.equal(typeof http, 'function')
-assert.equal(typeof payloadRevalidationSource, 'function')
+assert.equal(typeof payloadSchema['~standard'].validate, 'function')
+assert.equal(payloadSource, 'urn:klnap:revalidation:payload')
 
-// Quick start declarations from the packed package: tag strings match the events they invalidate.
+const secret = `whsec_${Buffer.from('smoke-secret').toString('base64')}`
 const { tags, POST } = defineRevalidation({
-  secret: 'smoke-secret',
-  tags: { page: '[locale]:page:[slug]', siteSettings: '[locale]:site-settings' },
-  resolve: (event) => event.key ?? invalidKey(),
-  rules: ({ tags }) => ({ pages: [tags.page], 'site-settings': [tags.siteSettings] }),
+  secret,
+  sources: { [payloadSource]: payloadSchema },
+  tags: { page: '[locale]:page:[slug]' },
+  paths: { page: '/[locale]/[slug]' },
+  rules: ({ tags, paths, on }) => [
+    on({ source: payloadSource }, ({ affected }) => ({
+      tags: affected.flatMap(({ resource }) =>
+        resource.locale && resource.slug
+          ? [tags.page({ locale: resource.locale, slug: resource.slug })]
+          : [],
+      ),
+      paths: affected.flatMap(({ resource }) =>
+        resource.locale && resource.slug
+          ? [paths.page({ locale: resource.locale, slug: resource.slug })]
+          : [],
+      ),
+    })),
+  ],
 })
 assert.equal(typeof POST, 'function')
 assert.equal(tags.page({ locale: 'en', slug: 'about' }), 'en:page:about')
-assert.equal(tags.siteSettings({ locale: 'en' }), 'en:site-settings')
 assert.throws(() => tags.page({ locale: 'en' }), /missing param\(s\): slug/)
 
 const dispatches = []
 const dispatcher = {
   async dispatch(input) {
     dispatches.push(input)
-    return { status: 'accepted' }
+    return { status: 'accepted', results: [] }
   },
 }
 const config = await buildConfig({
@@ -86,7 +145,7 @@ node smoke.mjs
 
 # Build and exercise the installed package inside a real Next.js production runtime.
 cp -R "$repo_root/tests/fixtures/next-production/." "$work/"
-printf '{"target":"old-target","other":"old-other"}' > "$work/data.json"
+printf '{"target":"old-target","other":"old-other","stale":"old-stale"}' > "$work/data.json"
 export NODE_ENV=production
 export DATA_FILE="$work/data.json"
 if ! ./node_modules/.bin/next build --webpack >"$work/next-build.log" 2>&1; then

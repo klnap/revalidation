@@ -21,7 +21,12 @@ export default buildConfig({
   plugins: [
     revalidation({
       dispatcher: http({
-        target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
+        targets: {
+          website: {
+            url: process.env.REVALIDATION_URL!,
+            secret: process.env.REVALIDATION_SECRET!,
+          },
+        },
       }),
     }),
   ],
@@ -44,19 +49,21 @@ Collections and globals do nothing until they opt in with `custom.revalidation`.
 
 ## Event contents
 
-Each changed document, in each affected locale, produces one item:
+Each changed document in an affected locale contributes a resource to a Payload CloudEvent:
 
 | Field | Value |
 | --- | --- |
 | `operation` | `create`, `update` or `delete` |
 | `locale` | The locale of the change |
-| `key` | The collection or global slug |
-| `collection` / `global` | The slug of the source |
-| `documentId` | The document id as a string (collections) |
-| `slug` | The route identifier value (collections) |
+| `resource.type` | `payload.collection` or `payload.global` |
+| `resource.name` | The collection or global slug |
+| `resource.id` | The document id as a string (collections) |
+| `resource.slug` | The route identifier value (collections) |
+| `resource.locale` | The affected locale |
 | `identifiers` | Every configured identifier value, keyed by path (only when `identifier` is set) |
 
-Items are grouped into events of at most 100 items.
+The event's `data.affected` array contains changed resources. The root `operation` and `resource`
+identify the triggering change; dependent media resources appear in `affected`.
 
 Identifiers: the first configured path is the route key. Each path is read independently; they are not combined. If an identifier value changed, the producer also emits the previous values, so cache entries under the old identifier are invalidated too.
 
@@ -82,8 +89,11 @@ Locales come from `config.localization`. Without localization, the producer uses
 
 ## Timing and failures
 
-- Each save hook schedules dispatch after the hook returns (one second later). Dispatch is not tied to the database commit, and a rolled-back save is not cancelled. If a save is rolled back after its hook ran, the event is still sent. Treat events as "a change was attempted", and make consumers tolerant of that.
-- The built-in orderable hooks defer reorders until commit and discard them on rollback. This applies to those hooks only.
+- Lifecycle hooks run before the database transaction commits. Deferred dispatch reduces the chance
+  of racing the write but does not establish commit ordering. A later rollback does not retract an
+  event already sent.
+- Orderable delivery uses host callbacks. Do not assume commit ordering or rollback behavior unless
+  the host integration proves it.
 - Dispatch errors (transport errors, non-accepted outcomes) are logged and do not reject the save.
 - A read error while building an event (for example a failing `findByID`) is logged and does not reject the save. The affected revalidation is lost.
 
@@ -93,5 +103,6 @@ A change to a shared media file also revalidates the documents that use it. See 
 
 ## Configuration isolation
 
-Each HTTP dispatcher closes over its own target. Multiple Payload configurations can use different targets without shared process state.
+Each HTTP dispatcher closes over its own named targets. Multiple Payload configurations can use
+different targets without shared process state.
 - Only collections and globals with `custom.revalidation` are searched for dependents, and only the hooks listed above are emitted.

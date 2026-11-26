@@ -55,17 +55,19 @@ jobs:
           test "$(./node_modules/.bin/npm --version)" = "12.2.3"
 
       - name: Pack and validate public files and declarations
+        id: pack
         env:
           TARBALL_DIR: ${{ runner.temp }}
         run: |
           npm pack --pack-destination "$TARBALL_DIR" --json > "$TARBALL_DIR/pack.json"
           TARBALL="$(node -e 'const path = require("node:path"); const result = require(process.argv[1]); const pack = Array.isArray(result) ? result[0] : Object.values(result)[0]; process.stdout.write(path.join(process.env.TARBALL_DIR, pack.filename));' "$TARBALL_DIR/pack.json")"
+          echo "path=$TARBALL" >> "$GITHUB_OUTPUT"
           TARBALL="$TARBALL" node --input-type=module <<'NODE'
           import { execFileSync } from "node:child_process";
           const tarball = process.env.TARBALL;
           const files = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).trim().split("\n");
           const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
-          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./consumers/next/tags", "./dispatchers", "./dispatchers/http"];
+          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./dispatchers", "./dispatchers/http"];
           if (JSON.stringify(Object.keys(manifest.exports ?? {}).sort()) !== JSON.stringify(expectedExports.sort())) throw new Error("Unexpected package exports.");
           const publicDeclarations = [];
           for (const [subpath, targets] of Object.entries(manifest.exports)) {
@@ -85,9 +87,55 @@ jobs:
             if (obsolete.test(declaration)) throw new Error(`Obsolete API in ${file}.`);
           }
           const readme = execFileSync("tar", ["-xOf", tarball, "package/README.md"], { encoding: "utf8" });
-          if (!readme.includes("Declarative, type-safe cache revalidation.")) throw new Error("README description is incorrect.");
+          if (!readme.includes("Declarative, type-safe cache revalidation across independent producers and consumers.")) throw new Error("README description is incorrect.");
           console.log(`Validated ${files.length} files and ${publicDeclarations.length} public declarations.`);
           NODE
+
+      - run: bun run test:integration
+
+      - name: Test the packed package in Payload and Next.js
+        env:
+          TARBALL: ${{ steps.pack.outputs.path }}
+        run: bun run test:consumer-smoke -- "$TARBALL"
+
+      - name: Install the tarball for Node.js runtime checks
+        env:
+          TARBALL: ${{ steps.pack.outputs.path }}
+          CONSUMER_DIR: ${{ runner.temp }}/node-consumer
+        run: | # zizmor: ignore[adhoc-packages] install the exact local tarball and pinned framework peers under test
+          mkdir -p "$CONSUMER_DIR"
+          NEXT_VERSION="$(node -p 'require("./package.json").devDependencies.next')"
+          PAYLOAD_VERSION="$(node -p 'require("./package.json").devDependencies.payload')"
+          npm install --prefix "$CONSUMER_DIR" --ignore-scripts --no-audit --no-fund \
+            "$TARBALL" "next@$NEXT_VERSION" "payload@$PAYLOAD_VERSION" react@19.3.1 react-dom@19.3.1
+          cp tests/fixtures/consumer/runtime.mjs "$CONSUMER_DIR/"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.5
+          package-manager-cache: false
+
+      - name: Test the tarball on the minimum supported Node.js 22 version
+        working-directory: ${{ runner.temp }}/node-consumer
+        run: node runtime.mjs
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+          package-manager-cache: false
+
+      - name: Test the tarball on the minimum supported Node.js 24 version
+        working-directory: ${{ runner.temp }}/node-consumer
+        run: node runtime.mjs
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+
+      - name: Test the tarball on the minimum supported Node.js 26 version
+        working-directory: ${{ runner.temp }}/node-consumer
+        run: node runtime.mjs
 
   security:
     name: security

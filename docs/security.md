@@ -1,35 +1,36 @@
 # Security
 
-## Authentication
+## Authentication and transport
 
-The producer and the consumer share one secret. The dispatcher sends it as `Authorization: Bearer <secret>` on every request, and the consumer compares it in constant time (both values are hashed before comparison). Requests without the correct token get `401` and do nothing.
+The HTTP dispatcher signs the exact request body with Standard Webhooks. The Next.js consumer
+verifies the signature and timestamp before parsing CloudEvents or calling cache APIs.
 
-- Serve the consumer and send events over HTTPS. The HTTP dispatcher refuses plain `http://` URLs unless `NODE_ENV` is `development` or `test`, or the host is loopback (`localhost`, `127.0.0.1`, `[::1]`). `allowInsecure: true` lifts the restriction for every host and sends the secret unencrypted; it is an explicit opt-in.
-- Keep the secret in server-side environment variables. Do not put it in client bundles.
-- The consumer accepts one secret per process. To rotate, update both applications and deploy them together.
-- Error messages from the dispatcher do not include the secret.
+- Use HTTPS between producer and consumer.
+- Store secrets in server-side environment variables. Never put them in client bundles.
+- Use Standard Webhooks secrets in `whsec_` base64 form.
+- Keep target URLs trusted. HTTPS validation does not restrict destinations to an application
+  allowlist.
+- Plain HTTP is accepted only for loopback or when `allowInsecure: true` is explicitly set.
+- A captured signed request can be replayed during the Standard Webhooks timestamp tolerance window.
+  Cache invalidation is repeatable, but the consumer does not persist delivery IDs for deduplication.
 
-## Limits
+## Input validation and limits
 
-The consumer rejects large requests before processing them:
+The handler checks the media type, reads a bounded request body, verifies its signature, validates
+the CloudEvents envelope, then validates every event's `data` with its registered Standard Schema
+V1 validator. It runs no cache operations unless the full request passes validation.
 
-| Limit | Default | Response |
-| --- | --- | --- |
-| Body size (`maxBodyBytes`) | 256 KiB | `400` |
-| Items per event (`maxEvents`) | 100 | `400` |
-| Event parameter length | 256 characters | `400` for the whole request |
-| Path length | 1024 characters | `400` |
+The body limit defaults to 256 KiB; the event limit defaults to 100. Both limits have hard ceilings.
+The handler bounds generated tags to 256 characters and generated paths to 1024 characters, and
+requires paths to start with `/`. See [consumer configuration](consumers/next.md#validation-and-limits).
 
-Streamed bodies are counted as read. Once the configured byte limit is crossed, the handler requests cancellation without awaiting the stream source; cancellation cannot delay or replace the `400` response. The hosting runtime owns transport cleanup.
+## Logging and secrets
 
-Path parameters are checked: path separators, control characters and dot segments (`..`) are rejected with `400`.
+Do not log webhook secrets, signatures, raw request bodies, or event data that may contain
+confidential content. The built-in handler logs request identifiers, operation outcomes, and error
+names rather than raw errors.
 
-## Not protected
+## Scope
 
-- **No request signatures, timestamps or nonces.** A captured request can be replayed until the secret changes. Replayed events only expire tags again, but they are not rejected.
-- **No rate limiting.** Protect the route at the platform or network level if needed.
-- **One shared secret.** Anyone with the secret can expire any tag or path that a rule maps. Rules are the only restriction: an event whose key matches no rule does nothing.
-- **Event content is trusted to be well formed, not to be true.** The consumer uses it for cache keys and parameters only.
-- **Parameters in tag names are not escaped.** Do not use untrusted text as a tag parameter without validation.
-
-Report vulnerabilities as described in [SECURITY.md](../SECURITY.md).
+The package does not provide rate limiting, a persistent delivery queue, destination allowlisting,
+or durable replay protection. Apply platform controls when your deployment requires them.

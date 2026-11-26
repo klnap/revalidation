@@ -1,309 +1,367 @@
+import { Webhook } from 'standardwebhooks'
 import { aggregateDispatchOutcomes, createDispatchError } from '../../core/dispatch-outcome.js'
 import {
   assertLimit,
+  DEFAULT_MAX_BODY_BYTES,
   DEFAULT_MAX_EVENT_ITEMS,
+  MAX_BODY_BYTES_CEILING,
   MAX_EVENT_ITEMS_CEILING,
 } from '../../core/event-limits.js'
-import type { CacheEvent, Dispatcher, DispatchInput, DispatchOutcome } from '../../core/index.js'
 import {
-  toTargetList,
-  type RevalidationTarget,
-  type TargetConfig,
-} from '../../core/revalidation-target.js'
+  CLOUDEVENTS_BATCH_JSON,
+  CLOUDEVENTS_JSON,
+  matchesEventSelector,
+  type CloudEvent,
+  type Dispatcher,
+  type DispatchInput,
+  type DispatchOutcome,
+  type TargetDispatchResult,
+} from '../../core/index.js'
+import { toTargetList, validateTarget, type TargetConfig } from '../../core/revalidation-target.js'
 
 const MAX_CONCURRENT_DELIVERIES = 4
+const MAX_RETRIES = 10
+const MAX_ATTEMPT_TIMEOUT_MS = 60_000
+const MAX_DEADLINE_MS = 300_000
+const MAX_RETRY_DELAY_MS = 60_000
 
 export type HttpDispatcherConfig = {
-  /** One or more HTTP targets. */
-  target: TargetConfig
-  /** Per-attempt timeout. */
+  targets: TargetConfig
   timeoutMs?: number
-  /** Overall budget for one dispatch call, retries included. Default 5 s. */
   deadlineMs?: number
-  /** Retries after the first attempt for retryable failures. Default 2 (three attempts). */
   retries?: number
-  /** Base delay before the first retry; each retry waits a random time up to double the previous bound. Default 200 ms. */
   retryDelayMs?: number
-  /**
-   * Allow plain `http://` targets on any host. The bearer secret then travels unencrypted, so use
-   * this only on a network you trust. Default false.
-   */
   allowInsecure?: boolean
-  /**
-   * Most items per event sent to this target. Default 100, hard maximum 1000. Must not exceed the
-   * consumer's `maxEvents`; the consumer rejects larger events with 400.
-   */
   maxEventItems?: number
+  maxBodyBytes?: number
 }
 
-type AttemptResult = { outcome: DispatchOutcome; retryable: boolean }
+type Target = ReturnType<typeof toTargetList>[number]
+
+const assertIntegerRange = (name: string, value: number, min: number, max: number): number => {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new RangeError(`${name} must be an integer from ${min} to ${max}; got ${value}`)
+  }
+  return value
+}
+
+type AttemptResult = {
+  status: TargetDispatchResult['status']
+  retryable: boolean
+  error?: TargetDispatchResult['error']
+}
 
 type PostOptions = {
+  body: string
+  contentType: string
+  deliveryId: string
+  timestamp: Date
   timeoutMs: number
   deadline: AbortSignal
-  deadlineMs: number
-  retries: number
-  retryDelayMs: number
-  deliveryId: string
   allowInsecure: boolean
 }
 
-/** Hosts that only this machine can reach. Plain http to them never leaves the host. */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-
-/**
- * https everywhere. Plain http is allowed in development and test, to loopback hosts in any
- * environment, and to any host when `allowInsecure` is set. Other http targets are refused.
- */
 const isAllowedUrl = (url: string, allowInsecure: boolean): boolean => {
-  let parsed: URL
   try {
-    parsed = new URL(url)
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' ||
+      (parsed.protocol === 'http:' &&
+        (allowInsecure || ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)))
+    )
   } catch {
     return false
   }
-  if (parsed.protocol === 'https:') return true
-  if (parsed.protocol !== 'http:') return false
-  if (allowInsecure) return true
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') return true
-  return LOOPBACK_HOSTS.has(parsed.hostname)
 }
 
-/** Rejects as soon as the deadline passes, even when `fetch` ignores its abort signal. */
-const untilDeadline = <T>(work: Promise<T>, deadline: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    let settled = false
-    const onAbort = () => {
-      if (settled) return
-      settled = true
-      reject(new Error('dispatch deadline exceeded'))
-    }
-    if (deadline.aborted) onAbort()
-    else deadline.addEventListener('abort', onAbort, { once: true })
-    work.then(
-      (value) => {
-        deadline.removeEventListener('abort', onAbort)
-        if (settled) return
-        settled = true
-        resolve(value)
-      },
-      (error) => {
-        deadline.removeEventListener('abort', onAbort)
-        if (settled) return
-        settled = true
-        reject(error)
-      },
-    )
-  })
-
-/** Waits before a retry; returns early when the deadline passes. */
 const pause = (ms: number, deadline: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    deadline.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      { once: true },
-    )
+    if (deadline.aborted) return resolve()
+    const timer = setTimeout(done, ms)
+    function done() {
+      clearTimeout(timer)
+      deadline.removeEventListener('abort', done)
+      resolve()
+    }
+    deadline.addEventListener('abort', done, { once: true })
   })
 
-const deadlineFailure = (deadlineMs: number): AttemptResult => ({
-  retryable: false,
-  outcome: {
-    status: 'failed',
-    error: createDispatchError(
-      'HTTP_DISPATCH_ERROR',
-      `dispatch deadline of ${deadlineMs} ms exceeded`,
-    ),
-  },
-})
-
-const attemptPost = async (
-  target: RevalidationTarget,
-  event: CacheEvent,
-  options: PostOptions,
-): Promise<AttemptResult> => {
+const attemptPost = async (target: Target, options: PostOptions): Promise<AttemptResult> => {
   if (options.deadline.aborted) {
-    return deadlineFailure(options.deadlineMs)
+    return {
+      status: 'failed',
+      retryable: false,
+      error: createDispatchError('HTTP_DISPATCH_ERROR', 'dispatch deadline exceeded'),
+    }
   }
   if (!isAllowedUrl(target.url, options.allowInsecure)) {
     return {
+      status: 'failed',
       retryable: false,
-      outcome: {
-        status: 'failed',
-        error: createDispatchError('HTTP_DISPATCH_ERROR', 'target URL must use https'),
-      },
+      error: createDispatchError('HTTP_DISPATCH_ERROR', 'target URL must use https'),
     }
   }
-  const controller = new AbortController()
-  const abortWithDeadline = () => controller.abort()
-  options.deadline.addEventListener('abort', abortWithDeadline, { once: true })
-  if (options.deadline.aborted) abortWithDeadline()
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs)
+
+  const attemptController = new AbortController()
+  const abortFromDeadline = () => attemptController.abort()
+  options.deadline.addEventListener('abort', abortFromDeadline, { once: true })
+  const timeout = setTimeout(() => attemptController.abort(), options.timeoutMs)
+  const timestamp = options.timestamp
+  const webhook = new Webhook(target.secret)
+  const signature = webhook.sign(options.deliveryId, timestamp, options.body)
 
   try {
-    const response = await untilDeadline(
-      fetch(target.url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${target.secret}`,
-          'Content-Type': 'application/json',
-          'X-Revalidation-Delivery': options.deliveryId,
-        },
-        body: JSON.stringify(event),
-        signal: controller.signal,
-        // The Authorization header must never reach a redirect target, so redirects are not followed.
-        redirect: 'manual',
-      }),
-      options.deadline,
-    )
-
-    if (response.status >= 300 && response.status < 400) {
-      await response.body?.cancel().catch(() => undefined)
-      return {
-        retryable: false,
-        outcome: {
-          status: 'failed',
-          error: createDispatchError(
-            'HTTP_DISPATCH_ERROR',
-            `redirect refused (HTTP ${response.status})`,
-          ),
-        },
-      }
+    const response = await fetch(target.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': options.contentType,
+        'webhook-id': options.deliveryId,
+        'webhook-timestamp': String(Math.floor(timestamp.getTime() / 1000)),
+        'webhook-signature': signature,
+      },
+      body: options.body,
+      signal: attemptController.signal,
+      redirect: 'manual',
+    })
+    await response.body?.cancel().catch(() => undefined)
+    if (response.status >= 200 && response.status < 300) {
+      return { status: 'accepted', retryable: false }
     }
-    if (!response.ok) {
-      // Release the connection before any retry.
-      await response.body?.cancel().catch(() => undefined)
+    if (response.status === 429) {
       return {
-        retryable: response.status >= 500 || response.status === 429,
-        outcome: {
-          status: 'failed',
-          error: createDispatchError('HTTP_DISPATCH_ERROR', `HTTP ${response.status}`),
-        },
-      }
-    }
-    return { retryable: false, outcome: { status: 'accepted' } }
-  } catch (error) {
-    if (options.deadline.aborted) return deadlineFailure(options.deadlineMs)
-    if (error instanceof Error && error.name === 'AbortError') {
-      return {
+        status: 'rejected',
         retryable: true,
-        outcome: {
-          status: 'failed',
-          error: createDispatchError('HTTP_DISPATCH_ERROR', 'HTTP dispatch timed out'),
-        },
+        error: createDispatchError('HTTP_REJECTED', 'HTTP 429'),
+      }
+    }
+    if (response.status >= 500) {
+      return {
+        status: 'failed',
+        retryable: true,
+        error: createDispatchError('HTTP_FAILED', `HTTP ${response.status}`),
+      }
+    }
+    if (response.status >= 400) {
+      return {
+        status: 'rejected',
+        retryable: false,
+        error: createDispatchError('HTTP_REJECTED', `HTTP ${response.status}`),
       }
     }
     return {
+      status: 'failed',
+      retryable: false,
+      error: createDispatchError('HTTP_REDIRECT', `redirect refused (HTTP ${response.status})`),
+    }
+  } catch {
+    const timedOut = attemptController.signal.aborted
+    return {
+      status: 'unknown',
       retryable: true,
-      outcome: {
-        status: 'failed',
-        error: createDispatchError('HTTP_DISPATCH_ERROR', 'HTTP dispatch failed'),
-      },
+      error: createDispatchError(
+        timedOut ? 'HTTP_TIMEOUT' : 'HTTP_NETWORK_ERROR',
+        timedOut ? 'HTTP dispatch timed out' : 'HTTP dispatch failed',
+      ),
     }
   } finally {
-    clearTimeout(timer)
-    options.deadline.removeEventListener('abort', abortWithDeadline)
+    clearTimeout(timeout)
+    options.deadline.removeEventListener('abort', abortFromDeadline)
   }
 }
 
-/**
- * Bounded retries for transport errors, timeouts, 429 and 5xx, within the dispatch deadline. Every
- * attempt carries the same `X-Revalidation-Delivery` id so the receiver can recognise repeats. Other
- * 4xx responses and redirects are final.
- */
-const postEvent = async (
-  target: RevalidationTarget,
-  event: CacheEvent,
-  options: PostOptions,
-): Promise<DispatchOutcome> => {
-  const attempts = options.retries + 1
+const postChunk = async (
+  target: Target,
+  events: readonly CloudEvent[],
+  options: Omit<PostOptions, 'body' | 'contentType' | 'deliveryId' | 'timestamp'> & {
+    retries: number
+    retryDelayMs: number
+  },
+): Promise<TargetDispatchResult> => {
+  const isBatch = events.length !== 1
+  const body = JSON.stringify(isBatch ? events : events[0])
+  const contentType = isBatch ? CLOUDEVENTS_BATCH_JSON : CLOUDEVENTS_JSON
+  const deliveryId = `wh_${crypto.randomUUID()}`
   let last: AttemptResult | undefined
-  let made = 0
+  let attempts = 0
+  let lastTimestamp = 0
 
-  while (made < attempts) {
-    if (made > 0) {
-      // Full jitter: a random wait up to the doubling bound, so retries do not synchronise.
-      await pause(Math.random() * options.retryDelayMs * 2 ** (made - 1), options.deadline)
-      if (options.deadline.aborted) {
-        last = deadlineFailure(options.deadlineMs)
-        break
-      }
+  while (attempts <= options.retries) {
+    if (attempts > 0) {
+      await pause(Math.random() * options.retryDelayMs * 2 ** (attempts - 1), options.deadline)
     }
-    made += 1
-    last = await attemptPost(target, event, options)
-    if (last.outcome.status === 'accepted' || !last.retryable) break
+    if (options.deadline.aborted) break
+    attempts += 1
+    const timestampMs = Math.max(Date.now(), lastTimestamp + 1000)
+    lastTimestamp = timestampMs
+    last = await attemptPost(target, {
+      body,
+      contentType,
+      deliveryId,
+      timestamp: new Date(timestampMs),
+      timeoutMs: options.timeoutMs,
+      deadline: options.deadline,
+      allowInsecure: options.allowInsecure,
+    })
+    if (!last.retryable || last.status === 'accepted') break
   }
 
-  const outcome = last?.outcome ?? {
-    status: 'failed' as const,
-    error: createDispatchError('HTTP_DISPATCH_ERROR', 'no attempt made'),
-  }
-  if (outcome.status === 'accepted') return outcome
-  const attemptsMade = made
   return {
-    ...outcome,
-    error: {
-      ...outcome.error,
-      message: `${outcome.error.message} (attempts: ${attemptsMade}/${attempts})`,
-    },
+    target: target.name,
+    deliveryId,
+    status: last?.status ?? 'failed',
+    attempts,
+    ...((last?.error || !last) && {
+      error:
+        last?.error ?? createDispatchError('HTTP_DISPATCH_ERROR', 'dispatch deadline exceeded'),
+    }),
   }
+}
+
+const chunkEvents = (
+  events: readonly CloudEvent[],
+  maxItems: number,
+  maxBytes: number,
+): { events: CloudEvent[]; tooLarge: boolean }[] => {
+  const encoder = new TextEncoder()
+  const result: { events: CloudEvent[]; tooLarge: boolean }[] = []
+  let current: CloudEvent[] = []
+  let currentEventBytes = 0
+  for (const event of events) {
+    const eventBytes = encoder.encode(JSON.stringify(event)).byteLength
+    const singleTooLarge = eventBytes > maxBytes
+    if (singleTooLarge) {
+      if (current.length) result.push({ events: current, tooLarge: false })
+      current = []
+      currentEventBytes = 0
+      result.push({ events: [event], tooLarge: true })
+      continue
+    }
+    const candidateBytes = current.length
+      ? currentEventBytes + eventBytes + current.length + 2
+      : eventBytes
+    if (current.length && (current.length + 1 > maxItems || candidateBytes > maxBytes)) {
+      result.push({ events: current, tooLarge: false })
+      current = [event]
+      currentEventBytes = eventBytes
+    } else {
+      current.push(event)
+      currentEventBytes += eventBytes
+    }
+  }
+  if (current.length) result.push({ events: current, tooLarge: false })
+  return result
+}
+
+const runBounded = async <T, R>(
+  items: readonly T[],
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length)
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(MAX_CONCURRENT_DELIVERIES, items.length) }, async () => {
+      while (next < items.length) {
+        const index = next++
+        results[index] = await worker(items[index]!)
+      }
+    }),
+  )
+  return results
 }
 
 export const http = (config: HttpDispatcherConfig): Dispatcher => {
+  if (!Object.keys(config.targets).length) throw new Error('http dispatcher requires targets')
+  for (const [name, target] of Object.entries(config.targets)) {
+    validateTarget(name, target, config.allowInsecure)
+    new Webhook(target.secret)
+  }
   const maxEventItems = assertLimit(
     'maxEventItems',
     config.maxEventItems ?? DEFAULT_MAX_EVENT_ITEMS,
     MAX_EVENT_ITEMS_CEILING,
   )
-  const targets = toTargetList(config.target)
-  if (!targets.length) throw new Error('http dispatcher requires at least one target')
-  const timeoutMs = config.timeoutMs ?? 15_000
-  const deadlineMs = config.deadlineMs ?? 5_000
-  const retries = config.retries ?? 2
-  const retryDelayMs = config.retryDelayMs ?? 200
+  const maxBodyBytes = assertLimit(
+    'maxBodyBytes',
+    config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    MAX_BODY_BYTES_CEILING,
+  )
+  const timeoutMs = assertIntegerRange(
+    'timeoutMs',
+    config.timeoutMs ?? 15_000,
+    1,
+    MAX_ATTEMPT_TIMEOUT_MS,
+  )
+  const deadlineMs = assertIntegerRange(
+    'deadlineMs',
+    config.deadlineMs ?? 5_000,
+    1,
+    MAX_DEADLINE_MS,
+  )
+  const retries = assertIntegerRange('retries', config.retries ?? 2, 0, MAX_RETRIES)
+  const retryDelayMs = assertIntegerRange(
+    'retryDelayMs',
+    config.retryDelayMs ?? 200,
+    0,
+    MAX_RETRY_DELAY_MS,
+  )
   const allowInsecure = config.allowInsecure ?? false
 
   return {
     maxEventItems,
     async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
-      const baseDeliveryId = input.deduplicationId ?? crypto.randomUUID()
-      // One deadline spans every target, event and retry of this call.
+      const allTargets = toTargetList(config.targets)
+      const selectedNames = input.targets ?? allTargets.map(({ name }) => name)
+      const unknown = selectedNames.filter((name) => !Object.hasOwn(config.targets, name))
+      if (unknown.length) {
+        return {
+          status: 'rejected',
+          results: unknown.map((target) => ({
+            target,
+            deliveryId: `wh_${crypto.randomUUID()}`,
+            status: 'rejected' as const,
+            attempts: 0,
+            error: createDispatchError('UNKNOWN_TARGET', `unknown target "${target}"`),
+          })),
+        }
+      }
+      const selected = new Set(selectedNames)
+      const jobs = allTargets
+        .filter(({ name }) => selected.has(name))
+        .flatMap((target) => {
+          const events = input.events.filter(
+            (event) => !target.filter || matchesEventSelector(event, target.filter),
+          )
+          return chunkEvents(events, maxEventItems, maxBodyBytes).map((chunk) => ({
+            target,
+            ...chunk,
+          }))
+        })
+      if (!jobs.length) return { status: 'accepted', results: [] }
+
       const deadline = new AbortController()
       const timer = setTimeout(() => deadline.abort(), deadlineMs)
       try {
-        const outcomes: DispatchOutcome[] = []
-        let eventIndex = 0
-        let targetIndex = 0
-        while (eventIndex < input.events.length) {
-          const jobs: Array<() => Promise<DispatchOutcome>> = []
-          while (jobs.length < MAX_CONCURRENT_DELIVERIES && eventIndex < input.events.length) {
-            const target = targets[targetIndex]!
-            const event = input.events[eventIndex]!
-            const deliveryIndex = eventIndex
-            jobs.push(() =>
-              postEvent(target, event, {
+        const results = await runBounded(jobs, ({ target, events, tooLarge }) =>
+          tooLarge
+            ? Promise.resolve({
+                target: target.name,
+                deliveryId: `wh_${crypto.randomUUID()}`,
+                status: 'failed' as const,
+                attempts: 0,
+                error: createDispatchError(
+                  'HTTP_BODY_TOO_LARGE',
+                  'request body exceeds maxBodyBytes',
+                ),
+              })
+            : postChunk(target, events, {
                 timeoutMs,
                 deadline: deadline.signal,
-                deadlineMs,
+                allowInsecure,
                 retries,
                 retryDelayMs,
-                allowInsecure,
-                deliveryId: `${baseDeliveryId}:${deliveryIndex}`,
               }),
-            )
-            targetIndex += 1
-            if (targetIndex === targets.length) {
-              targetIndex = 0
-              eventIndex += 1
-            }
-          }
-          outcomes.push(...(await Promise.all(jobs.map((job) => job()))))
-        }
-        return aggregateDispatchOutcomes(outcomes, 'HTTP_DISPATCH_ERROR')
+        )
+        return aggregateDispatchOutcomes(results)
       } finally {
         clearTimeout(timer)
       }

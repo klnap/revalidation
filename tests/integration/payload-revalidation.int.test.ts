@@ -6,7 +6,7 @@ import { revalidation } from '../../src/producers/payload/plugin.js'
 import { createTestPayload, type TestPayloadHandle } from './helpers/test-payload.js'
 
 const dispatches: DispatchInput[] = []
-let nextOutcome: DispatchOutcome = { status: 'accepted' }
+let nextOutcome: DispatchOutcome = { status: 'accepted', results: [] }
 let handle!: TestPayloadHandle
 
 const dispatcher = {
@@ -20,8 +20,18 @@ const findItems = (start: number) =>
   dispatches
     .slice(start)
     .flatMap((dispatch) => dispatch.events)
-    .filter((event) => event.source === 'payload')
-    .flatMap((event) => event.data as Array<Record<string, unknown>>)
+    .filter((event) => event.source === 'urn:klnap:revalidation:payload')
+    .flatMap((event) => {
+      const data = event.data as {
+        affected?: Array<{ operation: string; resource: Record<string, unknown> }>
+      }
+      return (data.affected ?? []).map(({ operation, resource }) => ({
+        operation,
+        collection: resource.name,
+        documentId: resource.id,
+        slug: resource.slug,
+      }))
+    })
 
 const waitForDispatch = async (start: number): Promise<Array<Record<string, unknown>>> => {
   const deadline = Date.now() + 10_000
@@ -50,7 +60,7 @@ describe('Payload revalidation (SQLite integration)', () => {
     await handle?.destroy()
   })
 
-  it('dispatches creates and updates after the database write commits', async () => {
+  it('dispatches creates and updates without delaying Payload writes', async () => {
     const dispatchStart = dispatches.length
     const created = await handle.payload.create({
       collection: 'articles',
@@ -97,7 +107,15 @@ describe('Payload revalidation (SQLite integration)', () => {
   it('dispatches deletes and keeps writes successful when delivery fails', async () => {
     nextOutcome = {
       status: 'failed',
-      error: { code: 'TEST_FAILURE', message: 'simulated dispatch failure' },
+      results: [
+        {
+          target: 'website',
+          deliveryId: 'wh_test',
+          status: 'failed',
+          attempts: 1,
+          error: { code: 'TEST_FAILURE', message: 'simulated dispatch failure' },
+        },
+      ],
     }
     const dispatchStart = dispatches.length
     const created = await handle.payload.create({
@@ -111,7 +129,7 @@ describe('Payload revalidation (SQLite integration)', () => {
       expect.objectContaining({ operation: 'create', documentId: String(created.id) }),
     )
 
-    nextOutcome = { status: 'accepted' }
+    nextOutcome = { status: 'accepted', results: [] }
     const deleteStart = dispatches.length
     await handle.payload.delete({ collection: 'articles', id: created.id })
     expect(await waitForDispatch(deleteStart)).toContainEqual(

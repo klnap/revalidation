@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import * as v from 'valibot'
 
-import { createPipeline } from '.'
+import { createPipeline } from './pipeline.js'
 
 const itemSchema = v.object({
   locale: v.string(),

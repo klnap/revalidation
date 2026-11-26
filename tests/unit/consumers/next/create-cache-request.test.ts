@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
 import { createRevalidationCache } from '../../../../src/consumers/next/create-cache'
-import { payloadRevalidationItemSchema } from '../../../../src/sources/payload'
+import { legacyPayloadItemSchema as payloadRevalidationItemSchema } from '../../../../src/consumers/next/legacy-payload-schema'
 
 const handlerFor = (overrides: Record<string, unknown> = {}) => {
   const { config } = compileHostRevalidation({
