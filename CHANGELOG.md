@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- 2c50b41: Replace the legacy consumer and event APIs with CloudEvents, Standard Schema validation, named HTTP targets, and composable cache rules. This release includes breaking public API changes.
+
 ## 0.3.0
 
 ### Minor Changes

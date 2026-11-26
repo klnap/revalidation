@@ -1,6 +1,6 @@
 {
   "name": "@klnap/revalidation",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Declarative, type-safe cache revalidation.",
   "keywords": [
     "revalidation",
