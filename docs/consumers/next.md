@@ -51,8 +51,18 @@ export { POST } from '@/revalidation'
 
 Template parameters in brackets become required helper arguments:
 
+When using `cacheTag` with the `'use cache'` directive, enable `cacheComponents: true` in
+`next.config.ts`. This is a Next.js requirement; the package does not change your Next.js config.
+
 ```ts
-import { cacheTag } from 'next/cache'
+import type { NextConfig } from 'next'
+
+const nextConfig: NextConfig = { cacheComponents: true }
+export default nextConfig
+```
+
+```ts
+import { cacheTag } from 'next/cache.js'
 import { tags } from '@/revalidation'
 
 export async function getPage(locale: string, slug: string) {
@@ -63,7 +73,8 @@ export async function getPage(locale: string, slug: string) {
 ```
 
 Static templates need no arguments. Values are not escaped; validate untrusted values before using
-them as tag or path parameters.
+them as tag or path parameters. See the Next.js
+[`cacheTag`](https://nextjs.org/docs/app/api-reference/functions/cacheTag) reference.
 
 ## Rules and selectors
 
