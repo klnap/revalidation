@@ -5,6 +5,8 @@ import type {
 } from 'payload'
 
 export type RevalidationChange = {
+  /** Internal marker for the triggering resource, not a serialized field. */
+  root?: boolean
   type: 'collection' | 'global'
   slug: string
   operation: 'create' | 'update' | 'delete'

@@ -1,8 +1,10 @@
 # @klnap/revalidation
 
-Declarative, type-safe cache revalidation.
+Declarative, type-safe cache revalidation across independent producers and consumers.
 
-Declare cache tags and paths once, then use typed helpers both when caching data and when mapping producer events to revalidation rules.
+The package uses CloudEvents 1.0, Standard Webhooks signatures, and Standard Schema V1. The
+built-in integrations produce Payload CMS events, deliver them over HTTP, and consume them in
+Next.js.
 
 ## Requirements
 
@@ -10,8 +12,6 @@ Declare cache tags and paths once, then use typed helpers both when caching data
 - TypeScript `>=5.0`
 - Next.js `>=16.4.5 <17` for the Next.js consumer
 - Payload `>=3.94.1 <4` for the Payload producer
-
-Configure Payload with the database adapter your application uses. The example below uses `@payloadcms/db-sqlite`.
 
 Install with Bun or npm:
 
@@ -21,204 +21,106 @@ bun add @klnap/revalidation
 npm install @klnap/revalidation
 ```
 
-The core and HTTP dispatcher do not require Next.js or Payload. If your application imports Valibot schemas for a custom source, add `valibot` as a direct dependency.
+## Configure the Next.js consumer
 
-## Quick start
-
-This example uses a multilingual Next.js app with Payload pages. Payload sends each page event with `key: "pages"`, its locale, and its slug.
-
-Enable Cache Components:
-
-```ts
-// next.config.ts
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = { cacheComponents: true };
-export default nextConfig;
-```
-
-Declare cache templates separately from the server-only consumer configuration:
-
-```ts
-// src/cache-targets.ts
-import { defineRevalidationTags } from '@klnap/revalidation/consumers/next/tags';
-
-export const cacheTargets = {
-  tags: { page: '[locale]:page:[projectSlug]', siteSettings: '[locale]:site-settings' },
-  paths: { page: '/[locale]/[projectSlug]' },
-} as const;
-
-export const { tags, paths } = defineRevalidationTags(cacheTargets);
-```
-
-Configure event resolution, rules, and the bound handler:
+Declare cache templates, the accepted event source schema, and rules in a server-only module:
 
 ```ts
 // src/revalidation.ts
-import 'server-only';
-import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
-import { cacheTargets } from '@/cache-targets';
+import 'server-only'
+import { defineRevalidation } from '@klnap/revalidation/consumers/next'
+import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
 
-export const { POST } = defineRevalidation({
-  ...cacheTargets,
+export const { tags, paths, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  mode: 'expire',
-  resolve: (event) => event.key ?? invalidKey(),
-  params: (event) => ({
-    locale: event.locale,
-    projectSlug: event.slug,
-  }),
-  rules: ({ tags, paths }) => ({
-    pages: { tags: [tags.page], paths: [paths.page] },
-    'site-settings': [tags.siteSettings],
-  }),
-});
+  sources: { [payloadSource]: payloadSchema },
+  tags: { page: '[locale]:page:[slug]' },
+  paths: { page: '/[locale]/[slug]' },
+  rules: ({ tags, paths, on }) => [
+    on(
+      {
+        source: payloadSource,
+        affected: { type: 'payload.collection', name: 'pages' },
+      },
+      ({ affected }) => ({
+        tags: affected.flatMap(({ resource }) =>
+          resource.locale && resource.slug
+            ? [tags.page({ locale: resource.locale, slug: resource.slug })]
+            : [],
+        ),
+        paths: affected.flatMap(({ resource }) =>
+          resource.locale && resource.slug
+            ? [paths.page({ locale: resource.locale, slug: resource.slug })]
+            : [],
+        ),
+      }),
+    ),
+  ],
+})
 ```
 
-The keys `pages` and `site-settings` must match keys returned by `resolve`. `params` maps the producer's `slug` field to `projectSlug`; `invalidKey()` skips items without a valid rule key.
-
-Re-export the configuration-bound handler from a Route Handler:
+Re-export `POST` from the Route Handler:
 
 ```ts
 // src/app/api/revalidate/route.ts
-export { POST } from '@/revalidation';
+export { POST } from '@/revalidation'
 ```
 
-Use the same tag helper when caching the page:
+Use the same tag helper when caching data:
 
 ```ts
-// src/lib/pages.ts
-import { cacheTag } from 'next/cache';
-import { tags } from '@/cache-targets';
+import { cacheTag } from 'next/cache'
+import { tags } from '@/revalidation'
 
 export async function getPage(locale: string, slug: string) {
-  'use cache';
-  cacheTag(tags.page({ locale, projectSlug: slug }));
+  'use cache'
+  cacheTag(tags.page({ locale, slug }))
   // Load the page.
 }
 ```
 
-Configure Payload to send events to the Route Handler:
+## Configure the Payload producer
 
 ```ts
-// payload.config.ts (database and admin options omitted)
-import type { CollectionConfig } from 'payload';
-import { sqliteAdapter } from '@payloadcms/db-sqlite';
-import { http } from '@klnap/revalidation/dispatchers/http';
-import { revalidation } from '@klnap/revalidation/producers/payload';
-import { buildConfig } from 'payload';
+import { http } from '@klnap/revalidation/dispatchers/http'
+import { revalidation } from '@klnap/revalidation/producers/payload'
 
-const media: CollectionConfig = {
-  slug: 'media',
-  upload: true,
-  fields: [{ name: 'alt', type: 'text', localized: true }],
-};
-
-export default buildConfig({
-  secret: process.env.PAYLOAD_SECRET!,
-  db: sqliteAdapter({ client: { url: process.env.PAYLOAD_SQLITE_URL! } }),
-  localization: {
-    locales: ['en', 'fr'],
-    defaultLocale: 'en',
-  },
-  collections: [
-    media,
-    {
-      slug: 'pages',
-      custom: { revalidation: true },
-      fields: [
-        { name: 'title', type: 'text', localized: true },
-        { name: 'slug', type: 'text', required: true, localized: true },
-        { name: 'heroImage', type: 'upload', relationTo: 'media' },
-      ],
+revalidation({
+  dispatcher: http({
+    targets: {
+      website: {
+        url: process.env.REVALIDATION_URL!,
+        secret: process.env.REVALIDATION_SECRET!,
+      },
     },
-  ],
-  globals: [
-    {
-      slug: 'site-settings',
-      custom: { revalidation: true },
-      fields: [{ name: 'siteName', type: 'text', localized: true }],
-    },
-  ],
-  plugins: [
-    revalidation({
-      dispatcher: http({
-        target: {
-          url: process.env.REVALIDATION_URL!,
-          secret: process.env.REVALIDATION_SECRET!,
-        },
-      }),
-      media,
-    }),
-  ],
-});
-```
-
-Collections and globals opt in with `custom.revalidation`. The upload collection plus its `alt` field and the page's `heroImage` field enable localized media dependency tracking. Set `REVALIDATION_SECRET` in both applications and point `REVALIDATION_URL` at `/api/revalidate`. Payload dispatches after save hooks; delivery is best-effort. See [reliability](docs/reliability.md).
-
-## Reading the configuration
-
-> When this key is resolved, invalidate these cache targets.
-
-The producer determines what happened. The resolver determines which rule applies. The rule determines what to invalidate.
-
-## Rules and modes
-
-Rules map resolved event keys to tags or paths. A rule can use the tag-array shorthand or an object containing `tags`, `paths`, and a per-rule `mode`. The global mode defaults to `expire`; a rule mode overrides it for that rule's tags.
-
-For example, this rule changes `pages` to `stale` while all other rules keep the global `expire` mode:
-
-```ts
-rules: ({ tags, paths }) => ({
-  pages: {
-    tags: [tags.page],
-    paths: [paths.page],
-    mode: 'stale',
-  },
+  }),
 })
 ```
 
-- `expire` expires a tag immediately. The next read waits while Next.js regenerates the entry.
-- `stale` marks a tag stale. The next read may serve stale data while Next.js refreshes it in the background.
-- Paths use `revalidatePath(path)` without a profile; Next.js revalidates the path on its next visit.
+Opt collections and globals in with `custom.revalidation`. Set the same
+`REVALIDATION_SECRET` in both applications. HTTP deliveries use Standard Webhooks headers and
+CloudEvents structured JSON.
 
-Revalidation does not push an update to an already open page. See the [Next.js consumer guide](docs/consumers/next.md#revalidation-modes).
+## Concepts
 
-## Custom cache layers
+- **CloudEvent:** An immutable event with a source URI, ID, type, and application data.
+- **Source schema:** A Standard Schema V1 validator selected by the CloudEvent's `source`.
+- **Rule:** Matches event attributes and maps validated affected resources to tags or paths.
+- **Dispatcher target:** A named delivery destination. Targets are separate from cache tags and paths.
 
-The simple `rules` callback creates the built-in `next` layer. To add a CDN or another cache, use `rules.layers` and provide an `execute` function for each custom layer:
+Payload events use source `urn:klnap:revalidation:payload`. One event uses
+`application/cloudevents+json`; a batch uses `application/cloudevents-batch+json`.
 
-```ts
-rules: {
-  layers: {
-    next: ({ tags, paths }) => ({
-      pages: { tags: [tags.page], paths: [paths.page] },
-    }),
-    cdn: ({ tags }) => ({ pages: [tags.page] }),
-  },
-},
-execute: {
-  cdn: async ({ tags }) => purgeCdn(tags.map((tag) => tag.value)),
-},
-```
+## Verification
 
-For schema-validated event sources, use the advanced `sources` and `layers` DSL. See [custom sources](docs/sources/custom.md).
-
-## Other integrations
-
-- [Next.js consumer](docs/consumers/next.md): standalone setup, event resolution, custom parameters, modes, and custom cache layers.
-- [Payload producer](docs/producers/payload.md): collection and global hooks, localization, and change detection.
-- [Custom sources](docs/sources/custom.md): validate other event shapes with the advanced `sources` and `layers` DSL.
-- [HTTP dispatcher](docs/dispatchers/http.md): delivery retries and limits.
-- [Architecture](docs/concepts/architecture.md): producer, dispatcher, consumer, and cache-layer contracts.
-
-## Development and verification
-
-- `bun run check` runs formatting, lint, type checks, package tests, static analysis, build, publint, and Are the Types Wrong.
+- `bun run check` runs formatting, lint, type checks, unit tests, static analysis, and package checks.
 - `bun run test:integration` runs Payload database integration tests.
-- `bun run test:consumer-smoke -- <tarball>` runs the Payload and production Next.js integration smoke test.
+- `bun run test:consumer-smoke -- <tarball>` tests an installed package; with no tarball, it packs
+  the current build. It also tests a production Next.js cache runtime.
 
-CI runs these checks, Payload integration tests, packed-package type and runtime checks across the minimum supported Node.js versions, and the production Next.js consumer smoke test.
+See [Next.js consumer](docs/consumers/next.md), [Payload producer](docs/producers/payload.md),
+[HTTP dispatcher](docs/dispatchers/http.md), [security](docs/security.md), and
+[reliability](docs/reliability.md).
 
 ## License
 

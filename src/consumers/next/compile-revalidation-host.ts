@@ -1,8 +1,7 @@
 import type * as v from 'valibot'
 
 import { CacheConfigurationError } from '../../core/errors.js'
-import type { PayloadRevalidationItem } from '../../sources/payload/index.js'
-import { payloadRevalidationItemSchema } from '../../sources/payload/index.js'
+import { legacyPayloadItemSchema, type LegacyPayloadItem } from './legacy-payload-schema.js'
 import { collectTemplateParamKeys } from './collect-template-param-keys.js'
 import type {
   CompiledHostRuntime,
@@ -47,8 +46,7 @@ export type CompileHostResult<
   paths: BuiltPaths<TPaths>
 }
 
-const isPayloadSchema = (schema: v.GenericSchema): boolean =>
-  schema === payloadRevalidationItemSchema
+const isPayloadSchema = (schema: v.GenericSchema): boolean => schema === legacyPayloadItemSchema
 
 const tagIdFromDef = (tag: TagReference): string => {
   const id = tag[TAG_SYMBOL]
@@ -261,7 +259,7 @@ export const compileHostRevalidation = <
         })
       : isPayloadSchema(source.schema)
         ? (event: RevalidationEvent) =>
-            defaultPayloadParams(event as RevalidationEvent<PayloadRevalidationItem>)
+            defaultPayloadParams(event as RevalidationEvent<LegacyPayloadItem>)
         : (event: RevalidationEvent) => defaultParamsFromEvent(event, templateParamKeys)
 
     compiledSources[name] = {

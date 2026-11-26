@@ -6,19 +6,17 @@ import {
   MAX_BODY_BYTES_CEILING,
   MAX_EVENT_ITEMS_CEILING,
 } from '../../core/event-limits.js'
+import type { InspectResult, Logger } from '../../core/index.js'
 import {
   CacheConfigurationError,
   CacheExecutionError,
   CacheRequestError,
   CacheSchemaError,
   CacheSourceError,
-  createPipeline,
-  type InspectResult,
-  type Logger,
   toHttpStatus,
-} from '../../core/index.js'
+} from '../../core/errors.js'
 import { normalizeItems } from '../../core/normalize.js'
-import type { PipelineConfig } from '../../core/pipeline.js'
+import { createPipeline, type PipelineConfig } from '../../core/pipeline.js'
 import { executeNextLayer } from './execute-next.js'
 import type { NextRevalidationHandlerConfig } from './handler-config.js'
 import { inspectHostEnvelope, processHostEnvelope } from './process-host-envelope.js'

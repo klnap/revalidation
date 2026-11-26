@@ -1,167 +1,133 @@
 # Next.js consumer
 
-The Next.js consumer turns resolved event keys into declarative cache invalidation. It does not depend on Payload; any producer can send a compatible event.
+The Next.js consumer verifies Standard Webhooks signatures, validates CloudEvents and source data,
+matches rules, then invalidates tags and paths. It does not depend on Payload.
 
-Requires `next >=16.4.5 <17`. Cached functions use [Cache Components](https://nextjs.org/docs/app/getting-started/cache-components).
+Requires Next.js `>=16.4.5 <17`. Keep the secret-bearing configuration in a server-only module.
 
-## Configuration
-
-Declare tags and paths, require an explicit `resolve` callback, then define rules using the generated helpers:
+## Configure the handler
 
 ```ts
 // src/revalidation.ts
-import 'server-only';
-import { defineRevalidation, invalidKey } from '@klnap/revalidation/consumers/next';
+import 'server-only'
+import { defineRevalidation } from '@klnap/revalidation/consumers/next'
+import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
 
 export const { tags, paths, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  mode: 'expire',
+  sources: { [payloadSource]: payloadSchema },
   tags: { page: '[locale]:page:[slug]' },
   paths: { page: '/[locale]/[slug]' },
-  resolve: (event) => event.key ?? invalidKey(),
-  rules: ({ tags, paths }) => ({
-    pages: { tags: [tags.page], paths: [paths.page] },
-  }),
-});
+  rules: ({ tags, paths, on }) => [
+    on(
+      { source: payloadSource, affected: { type: 'payload.collection', name: 'pages' } },
+      ({ affected }) => ({
+        tags: affected.flatMap(({ resource }) =>
+          resource.locale && resource.slug
+            ? [tags.page({ locale: resource.locale, slug: resource.slug })]
+            : [],
+        ),
+        paths: affected.flatMap(({ resource }) =>
+          resource.locale && resource.slug
+            ? [paths.page({ locale: resource.locale, slug: resource.slug })]
+            : [],
+        ),
+      }),
+    ),
+  ],
+})
 ```
 
-Configure Cache Components in `next.config.ts`:
-
-```ts
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = { cacheComponents: true };
-export default nextConfig;
-```
-
-`defineRevalidation` compiles the configuration once and returns a `POST` function bound to it. It uses no shared configuration registry. Each call creates an independent handler; keep the configuration module server-only because it contains the secret and imports the Next.js consumer.
-
-## Route Handler
-
-Re-export the bound handler from a Route Handler:
+Re-export the bound handler:
 
 ```ts
 // src/app/api/revalidate/route.ts
-export { POST } from '@/revalidation';
+export { POST } from '@/revalidation'
 ```
 
-The handler accepts only `POST`, checks `Authorization: Bearer <secret>`, then validates and processes the event. The local configuration module must exist in the server bundle; there is no import-order or registry setup.
+`defineRevalidation()` binds one handler to its configuration. It uses no process-global registry.
 
-## Typed cache tags and paths
+## Typed cache templates
 
-Use the generated helpers in cached server functions:
+Template parameters in brackets become required helper arguments:
 
 ```ts
-// src/lib/pages.ts
-import { cacheTag } from 'next/cache';
-import { paths, tags } from '@/revalidation';
+import { cacheTag } from 'next/cache'
+import { tags } from '@/revalidation'
 
 export async function getPage(locale: string, slug: string) {
-  'use cache';
-  cacheTag(tags.page({ locale, slug }));
+  'use cache'
+  cacheTag(tags.page({ locale, slug }))
   // Load the page.
 }
 ```
 
-The helper arguments are inferred from the `[name]` placeholders. Static templates return no-argument helpers. `paths` uses the same typing and parameter rules.
+Static templates need no arguments. Values are not escaped; validate untrusted values before using
+them as tag or path parameters.
 
-## Rules
+## Rules and selectors
 
-Read a rule as: “When this key is resolved, invalidate these targets.”
+`on(selector, resolve)` selects CloudEvents by `source`, `type`, root operation/resource, or affected
+resource. The callback receives the validated `event`, its `data`, root fields, all `affected`
+resources, and typed `tags` and `paths`.
+
+Return `tags`, `paths`, or both. A rule may also set `mode`; the top-level mode defaults to `expire`.
+Tag results can override the mode individually. Path results may specify `type: 'page' | 'layout'`.
+See the [Next.js cache API](https://nextjs.org/docs/app/api-reference/functions/revalidateTag).
+
+## Custom cache work
+
+Use `operations` and named `execute` callbacks for app-owned cache work. The handler runs operations
+in order before Next.js tag or path invalidation:
 
 ```ts
-rules: ({ tags, paths }) => ({
-  'home-page': { tags: [tags.home], paths: [paths.home] },
-  projects: {
-    tags: [tags.project, tags.projects],
-    paths: [paths.project],
-    mode: 'stale',
+defineRevalidation({
+  secret: process.env.REVALIDATION_SECRET!,
+  sources: { [payloadSource]: payloadSchema },
+  rules: ({ on }) => [
+    on(
+      { source: payloadSource, affected: { type: 'payload.collection', name: 'products' } },
+      ({ affected }) => ({
+        operations: [
+          {
+            layer: 'search',
+            value: affected.flatMap(({ resource }) => (resource.id ? [resource.id] : [])),
+          },
+        ],
+        tags: affected.flatMap(({ resource }) =>
+          resource.slug ? [`product:${resource.slug}`] : [],
+        ),
+      }),
+    ),
+  ],
+  execute: {
+    search: async ({ value, signal }) => {
+      await updateSearchIndex(value, { signal })
+    },
   },
-  'site-settings': [tags.settings],
 })
 ```
 
-The rule key is the string returned by `resolve`. A rule can use the shorthand tag array or an object with `tags`, `paths`, and `mode`. The callback receives both helper maps, even when one map is empty.
+Operations run sequentially within each matching rule. A failed operation skips later operations
+and Next.js invalidations from that rule; independent rules continue. Any failure returns HTTP 500
+with per-operation results. Executors receive an `AbortSignal`; the default execution deadline is
+15 seconds, and `executionTimeoutMs` can set a value up to 60 seconds. Executors must honor the
+signal to stop their own work. A timeout stops the handler waiting and sends an abort request; it
+cannot forcibly terminate an executor that ignores the signal or reverse side effects already made.
+Timed-out operations remain failures, later dependent operations stay skipped, and late executor
+completion cannot resume invalidation. The handler limits requests to 1,000 custom operations by
+default; `maxOperations` can raise this to 10,000. This is synchronous best-effort work, not a
+durable queue.
 
-## Event resolution
+## Validation and limits
 
-Resolution stays explicit because producers use different event shapes, identifiers, and key conventions. The callback receives each event item with flattened wire fields such as `key`, `collection`, `global`, `locale`, `slug`, `documentId`, and `operation`. Producer-specific data remains available through `event.item` and `event.raw`.
+The handler accepts structured CloudEvents JSON and CloudEvents JSON batches only. It verifies the
+request signature before parsing events, checks each event against its source's Standard Schema V1
+validator, and runs no cache operation until every event validates.
 
-Resolve an existing key directly:
+Unknown sources, invalid data, malformed events, and invalid signatures fail the request. The
+default body limit is 256 KiB and the default event limit is 100. Configure `maxBodyBytes` and
+`maxEvents` within the package's hard ceilings. Body reads have a 15-second default deadline;
+`bodyTimeoutMs` can set a value up to 60 seconds.
 
-```ts
-resolve: (event) => event.key ?? invalidKey()
-```
-
-Map producer-specific fields to application rule keys, and choose separate keys for updates and deletes:
-
-```ts
-resolve: (event) => {
-  if (event.global === 'site-settings') return 'site-settings';
-  if (event.collection === 'portfolioEntries') {
-    return event.operation === 'delete' ? 'project-deleted' : 'projects';
-  }
-  return invalidKey();
-}
-```
-
-`invalidKey()` throws a sentinel the consumer treats as a skipped item. It does not turn an invalid event into a cache key. A returned key with no matching rule is also skipped; the request can still return `200`. Other resolver exceptions return `500`.
-
-## Custom parameters
-
-The consumer first finds template parameters by name in the flattened event and item. Use `params` to rename or derive them:
-
-```ts
-params: (event) => ({
-  locale: event.locale,
-  projectSlug: event.slug,
-})
-```
-
-For a template such as `'[locale]:project:[projectSlug]'`, the rule renders from the event's `locale` and the custom `projectSlug`. A missing parameter skips that target and is logged when a logger is configured.
-
-## Revalidation modes
-
-The global `mode` defaults to `expire`. A rule object's `mode` overrides it for that rule's tags.
-
-| Mode | Next.js call | Behavior |
-| --- | --- | --- |
-| `expire` | `revalidateTag(tag, { expire: 0 })` | Expires immediately; the next read blocks while Next.js regenerates the entry. It does not eagerly regenerate it. |
-| `stale` | `revalidateTag(tag, 'max')` | Marks the entry stale; the next read may serve stale data while Next.js refreshes it in the background. |
-
-`stale` affects tag invalidation only. Paths use `revalidatePath(path)` without a profile; in a Route Handler, Next.js marks the path for revalidation on its next visit. An open page is not pushed a refresh.
-
-## Custom cache layers
-
-The simple form implies the `next` layer. Use `rules.layers` and `execute` to add cache layers such as a CDN:
-
-```ts
-rules: {
-  layers: {
-    next: ({ tags }) => ({ pages: [tags.page] }),
-    cdn: ({ tags }) => ({ pages: [tags.page] }),
-  },
-},
-execute: {
-  cdn: async ({ tags, requestId }) => {
-    // Purge the CDN entries for these tags.
-  },
-},
-```
-
-The `next` layer uses Next.js automatically. Every other layer needs an `execute` handler. If one fails, other layers still run and the request returns `500`.
-
-## Validation and responses
-
-- The `Authorization` header must be `Bearer <secret>`; otherwise the handler returns `401`.
-- The comparison is constant-time. Anything else gets `401`.
-- Request bodies are limited to 256 KiB by default (`maxBodyBytes`), with a hard maximum of 16 MiB. Oversized bodies return `400`.
-- The handler counts streamed bytes and starts cancellation after the limit; it does not wait for the stream's cancellation promise before returning `400`. The framework owns transport cleanup.
-- Events contain at most 100 items by default (`maxEvents`), with a hard maximum of 1000. Larger events return `400`.
-- `maxEvents` must be at least the producer's chunk size (`maxEventItems` on the HTTP dispatcher, default 100). A larger chunk gets `400`.
-- In the source DSL, each item is validated against its source schema. Invalid items are skipped; an unknown source returns `400`.
-- In the simple `rules` form, the consumer accepts any source name and checks only that each item is an object. Use a source schema when event data needs runtime validation.
-- Items with invalid or unmatched keys are skipped. A `200` response means the request was accepted, not that every cache target was invalidated.
-- Limit values must be integers from 1 through their hard maximum; invalid configuration throws before the app starts.
-
-See [security](../security.md) and [reliability](../reliability.md) for limits and delivery behavior.
+See [security](../security.md) for request authentication, replay behavior, and limits.

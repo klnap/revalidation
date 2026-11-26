@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'bun:test'
+import { changesToRevalidationEvent } from './schema.ts'
 
-import { changesToRevalidationItems } from './schema.ts'
-
-describe('changesToRevalidationItems', () => {
-  it('sets key from collection slug and route slug from routeSlug', () => {
-    const items = changesToRevalidationItems([
+describe('changesToRevalidationEvent', () => {
+  it('keeps the trigger separate from all current, previous, and dependent identities', () => {
+    const event = changesToRevalidationEvent([
       {
         type: 'collection',
         slug: 'projects',
@@ -13,33 +12,52 @@ describe('changesToRevalidationItems', () => {
         doc: { id: '1', slug: 'doc-slug' },
         routeSlug: 'routing-slug',
       },
-    ])
-
-    expect(items).toEqual([
       {
+        type: 'collection',
+        slug: 'projects',
         operation: 'update',
         locale: 'en',
-        key: 'projects',
-        collection: 'projects',
-        slug: 'routing-slug',
-        documentId: '1',
+        doc: { id: '1', slug: 'old-slug' },
+        identifiers: { slug: 'old-slug' },
       },
-    ])
-  })
-
-  it('sets key from global slug', () => {
-    const items = changesToRevalidationItems([
       {
         type: 'global',
-        slug: 'home-page',
+        slug: 'settings',
         operation: 'update',
-        locale: 'pl',
-        doc: { id: undefined },
+        locale: 'en',
+        doc: {},
       },
     ])
 
-    expect(items[0]?.key).toBe('home-page')
-    expect(items[0]?.global).toBe('home-page')
-    expect(items[0]?.slug).toBeUndefined()
+    expect(event).toMatchObject({
+      specversion: '1.0',
+      source: 'urn:klnap:revalidation:payload',
+      type: 'com.klnap.revalidation.resource.changed.v1',
+      datacontenttype: 'application/json',
+      data: {
+        operation: 'update',
+        resource: {
+          type: 'payload.collection',
+          name: 'projects',
+          id: '1',
+          locale: 'en',
+          slug: 'routing-slug',
+        },
+        affected: [
+          { operation: 'update', resource: { slug: 'routing-slug' } },
+          {
+            operation: 'update',
+            resource: { slug: 'old-slug', identifiers: { slug: 'old-slug' } },
+          },
+          { operation: 'update', resource: { type: 'payload.global', name: 'settings' } },
+        ],
+      },
+    })
+    expect(event.id).toMatch(/^rev_[0-9a-f-]{36}$/)
+    expect(event.time).toBeTruthy()
+  })
+
+  it('rejects an empty change set', () => {
+    expect(() => changesToRevalidationEvent([])).toThrow()
   })
 })

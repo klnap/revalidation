@@ -42,10 +42,6 @@
       "types": "./dist/consumers/next/index.d.ts",
       "default": "./dist/consumers/next/index.js"
     },
-    "./consumers/next/tags": {
-      "types": "./dist/consumers/next/tags.d.ts",
-      "default": "./dist/consumers/next/tags.js"
-    },
     "./dispatchers": {
       "types": "./dist/dispatchers/index.d.ts",
       "default": "./dist/dispatchers/index.js"
@@ -60,6 +56,7 @@
     "docs/concepts",
     "docs/consumers",
     "docs/dispatchers",
+    "docs/migration",
     "docs/producers",
     "docs/sources",
     "docs/extending.md",
@@ -75,7 +72,8 @@
     "typecheck": "bun run build && tsc -p tsconfig.json && tsc -p tsconfig.types.json",
     "test": "bun test src tests/unit tests/contract tests/docs",
     "test:integration": "bun test tests/integration",
-    "test:consumer-smoke": "scripts/consumer-smoke.sh",
+    "test:orderable-integration": "scripts/test-orderable-integration.sh",
+    "test:consumer-smoke": "bun run build && scripts/consumer-smoke.sh",
     "format": "biome format .",
     "format:write": "biome format --write .",
     "lint": "biome lint .",
@@ -100,6 +98,8 @@
     }
   },
   "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "standardwebhooks": "^1.3.0",
     "valibot": "^1.4.0"
   },
   "devDependencies": {

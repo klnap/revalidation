@@ -4,9 +4,9 @@ import * as v from 'valibot'
 import { compileHostRevalidation } from '../../../../src/consumers/next/compile-revalidation-host'
 import { inspectHostEnvelope } from '../../../../src/consumers/next/process-host-envelope'
 import {
-  type PayloadRevalidationItem,
-  payloadRevalidationItemSchema,
-} from '../../../../src/sources/payload'
+  type LegacyPayloadItem as PayloadRevalidationItem,
+  legacyPayloadItemSchema as payloadRevalidationItemSchema,
+} from '../../../../src/consumers/next/legacy-payload-schema'
 
 describe('compileHostRevalidation', () => {
   const host = () =>

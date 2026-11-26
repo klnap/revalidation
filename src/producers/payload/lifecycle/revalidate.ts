@@ -400,12 +400,14 @@ export const runRevalidationHook = async (
     const pushChange = (
       docForChange: Record<string, unknown>,
       previousOrder?: RevalidationChange['previousOrder'],
+      root = false,
     ) => {
       const identifiers = readChangeIdentifiers(args, locale, docForChange)
       changes.push({
         type,
         slug,
         operation,
+        ...(root ? { root: true } : {}),
         locale,
         doc: docForChange,
         routeSlug: readCollectionRouteSlug(args, locale, docForChange),
@@ -458,7 +460,7 @@ export const runRevalidationHook = async (
           localePreviousDoc &&
           isLocalePublished(localePreviousDoc._status, locale, localizeStatus)
         ) {
-          pushChange(localePreviousDoc)
+          pushChange(localePreviousDoc, undefined, true)
           continue
         }
         skipped.push(`${locale}:draft`)
@@ -467,7 +469,7 @@ export const runRevalidationHook = async (
     }
 
     if (operation === 'delete' || !localePreviousDoc) {
-      pushChange(localeDoc, previousOrderFor())
+      pushChange(localeDoc, previousOrderFor(), true)
       continue
     }
 
@@ -498,7 +500,7 @@ export const runRevalidationHook = async (
       if (identifierChanged(identifiers, current, previous)) {
         // Old values (previous doc) and new values (current doc) both reach the receiver.
         pushChange(localePreviousDoc)
-        pushChange(localeDoc, previousOrderFor())
+        pushChange(localeDoc, previousOrderFor(), true)
         continue
       }
     }
@@ -513,14 +515,14 @@ export const runRevalidationHook = async (
       })
     ) {
       if (identifierChangedOnDocument) {
-        pushChange(localeDoc, previousOrderFor())
+        pushChange(localeDoc, previousOrderFor(), true)
         continue
       }
       skipped.push(`${locale}:unchanged`)
       continue
     }
 
-    pushChange(localeDoc, previousOrderFor())
+    pushChange(localeDoc, previousOrderFor(), true)
   }
 
   if (

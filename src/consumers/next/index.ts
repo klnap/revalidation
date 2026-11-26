@@ -1,26 +1,11 @@
 export {
   type DefinedRevalidation,
   defineRevalidation,
+  type DefineRevalidationInput,
+  type RevalidationExecutionContext,
+  type RevalidationExecutor,
+  type RevalidationRuleContext,
+  type RevalidationRuleResult,
 } from './define-revalidation.js'
-export type {
-  BuiltPaths,
-  BuiltTags,
-  DefineRevalidationInput,
-  DefineRevalidationInputFull,
-  DefineRevalidationInputRules,
-  HostLayerRule,
-  HostSourceDefinition,
-  LayerRuleEvent,
-  PathDef,
-  PathTemplate,
-  RevalidateSpec,
-  RevalidationEvent,
-  RevalidationRuleContext,
-  RuleMap,
-  RulesInput,
-  RulesLayersInput,
-  TagDef,
-  TagParamsBag,
-  TagTemplate,
-} from './host-types.js'
-export { InvalidKeyError, invalidKey } from './invalid-key-error.js'
+export type { PathTemplate, TagTemplate } from './host-types.js'
+export type { EventSelector } from '../../core/event-selector.js'

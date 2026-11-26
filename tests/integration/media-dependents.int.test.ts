@@ -11,20 +11,12 @@ import { createTestPayload, type TestPayloadHandle } from './helpers/test-payloa
 const dispatches: DispatchInput[] = []
 const dispatcher = {
   async dispatch(input: DispatchInput) {
-    const isPaginationFixture = input.events.some(
-      (event) =>
-        Array.isArray(event.data) &&
-        event.data.some(
-          (item) =>
-            typeof item === 'object' &&
-            item !== null &&
-            'slug' in item &&
-            typeof item.slug === 'string' &&
-            item.slug.startsWith('pagination-'),
-        ),
-    )
+    const isPaginationFixture = input.events.some((event) => {
+      const affected = (event.data as { affected?: { resource: { slug?: string } }[] }).affected
+      return affected?.some(({ resource }) => resource.slug?.startsWith('pagination-')) ?? false
+    })
     if (!isPaginationFixture) dispatches.push(input)
-    return { status: 'accepted' as const }
+    return { status: 'accepted' as const, results: [] }
   },
 }
 let handle!: TestPayloadHandle
@@ -34,8 +26,11 @@ const dependentSlugs = (from: number) =>
   dispatches
     .slice(from)
     .flatMap((d) => d.events)
-    .flatMap((e) => e.data as Array<Record<string, unknown>>)
-    .map((item) => item.slug)
+    .flatMap((event) =>
+      ((event.data as { affected?: { resource: { slug?: string } }[] }).affected ?? []).map(
+        ({ resource }) => resource.slug,
+      ),
+    )
 
 const waitFor = async (from: number, slug: string) => {
   const deadline = Date.now() + 10_000
@@ -87,7 +82,7 @@ describe('media-dependent revalidation (SQLite integration)', () => {
     await payload.create({ collection: 'posts', data: { slug: 'with-hero', hero: media.id } })
     await payload.create({ collection: 'posts', data: { slug: 'no-hero' } })
 
-    // Create events are dispatched after commit; let them land before the media update.
+    // Let the create hook deliveries land before the media update.
     await waitFor(start, 'with-hero')
     await waitFor(start, 'no-hero')
     const from = dispatches.length

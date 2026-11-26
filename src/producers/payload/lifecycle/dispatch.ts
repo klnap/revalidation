@@ -1,8 +1,3 @@
-import {
-  assertLimit,
-  DEFAULT_MAX_EVENT_ITEMS,
-  MAX_EVENT_ITEMS_CEILING,
-} from '../../../core/event-limits.js'
 import type { Dispatcher } from '../../../core/index.js'
 import { changesToRevalidationEvent } from '../schema.js'
 import { revalidationLogError } from './log.js'
@@ -12,14 +7,6 @@ type RevalidationLogger = {
   error: (message: string) => void
   warn?: (message: string) => void
   info?: (message: string) => void
-}
-
-export const chunkChanges = <T>(items: T[], size: number): T[][] => {
-  const chunks: T[][] = []
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size))
-  }
-  return chunks
 }
 
 /**
@@ -38,18 +25,13 @@ export const postRevalidationChanges = async ({
   if (!changes.length) return
 
   try {
-    // Every change is delivered: large change sets are split into events within the target's item limit.
-    const size = assertLimit(
-      'maxEventItems',
-      dispatcher.maxEventItems ?? DEFAULT_MAX_EVENT_ITEMS,
-      MAX_EVENT_ITEMS_CEILING,
-    )
-    const events = chunkChanges(changes, size).map(changesToRevalidationEvent)
+    const events = [changesToRevalidationEvent(changes)]
     const outcome = await dispatcher.dispatch({ events })
     if (outcome.status !== 'accepted') {
+      const errors = outcome.results.flatMap((result) => result.error?.message ?? [])
       revalidationLogError(
         logger,
-        `dispatcher ${outcome.status} · ${outcome.error?.message ?? 'unknown'}`,
+        `dispatcher ${outcome.status}${errors.length ? ` · ${errors.join('; ')}` : ''}`,
       )
     }
   } catch (error) {

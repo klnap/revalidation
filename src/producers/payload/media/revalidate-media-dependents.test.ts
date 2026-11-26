@@ -499,7 +499,9 @@ describe('media dependency resolution failures', () => {
       if ('gallery' in (where ?? {})) return Promise.resolve({ docs: [parent] })
       return Promise.resolve({ docs: [] })
     })
-    const dispatcher = { dispatch: mock(() => Promise.resolve({ status: 'accepted' as const })) }
+    const dispatcher = {
+      dispatch: mock(() => Promise.resolve({ status: 'accepted' as const, results: [] })),
+    }
 
     await createRevalidateMediaDependentsBeforeDelete(dispatcher as never)({
       id: 5,
@@ -523,7 +525,7 @@ describe('media dependency resolution failures', () => {
     )
 
     await createRevalidateMediaDependentsBeforeDelete({
-      dispatch: mock(() => Promise.resolve({ status: 'accepted' as const })),
+      dispatch: mock(() => Promise.resolve({ status: 'accepted' as const, results: [] })),
     } as never)({
       id: 5,
       context: {},

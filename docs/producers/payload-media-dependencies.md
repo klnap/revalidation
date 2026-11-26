@@ -7,7 +7,12 @@ With media tracking, a change to a media document revalidates every supported do
 ```ts
 revalidation({
   dispatcher: http({
-    target: { url: process.env.REVALIDATION_URL!, secret: process.env.REVALIDATION_SECRET! },
+    targets: {
+      website: {
+        url: process.env.REVALIDATION_URL!,
+        secret: process.env.REVALIDATION_SECRET!,
+      },
+    },
   }),
 });
 ```
@@ -16,7 +21,7 @@ No option is needed when the upload collection is the only upload collection or 
 
 ```ts
 revalidation({
-  dispatcher: http({ target }),
+  dispatcher: http({ targets: { website: target } }),
   media: mediaCollection, // the CollectionConfig of the upload collection
   // or: media: { collection: mediaCollection, excludeFields: ['updatedAt'] }
 });
