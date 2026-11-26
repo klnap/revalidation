@@ -56,7 +56,7 @@ npm install --no-audit --no-fund \
   react@19.3.1 react-dom@19.3.1 graphql@16.15.0 >/dev/null
 cp "$repo_root/tests/fixtures/consumer/consumer.mts" "$work/consumer.mts"
 cp "$repo_root/tests/fixtures/consumer/runtime.mjs" "$work/runtime.mjs"
-cat > "$work/tsconfig.json" <<'JSON'
+cat > "$work/consumer-tsconfig.json" <<'JSON'
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -70,7 +70,7 @@ cat > "$work/tsconfig.json" <<'JSON'
   "include": ["consumer.mts"]
 }
 JSON
-"$repo_root/node_modules/.bin/tsc" --project "$work/tsconfig.json"
+"$repo_root/node_modules/.bin/tsc" --project "$work/consumer-tsconfig.json"
 node "$work/runtime.mjs"
 cat > smoke.mjs <<'JS'
 import assert from 'node:assert/strict'
