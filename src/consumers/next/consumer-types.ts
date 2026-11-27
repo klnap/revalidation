@@ -114,21 +114,13 @@ type DeclarativeRule<
       profile?: CacheProfile
     }
 
-type InternalRule<
-  TData,
-  TTags extends Record<string, TagTemplate>,
-  TPaths extends Record<string, PathTemplate>,
-  TLayer extends string,
-> = object
-
 type RulesOutput<
   TData,
   TTags extends Record<string, TagTemplate>,
   TPaths extends Record<string, PathTemplate>,
-  TLayer extends string,
 > =
   | (IsCanonicalData<TData> extends never ? never : Record<string, DeclarativeRule<TTags, TPaths>>)
-  | readonly InternalRule<TData, TTags, TPaths, TLayer>[]
+  | readonly object[]
 
 export type RuleHelpers<
   TSchemas extends SchemaMap,
@@ -142,27 +134,24 @@ export type RuleHelpers<
     <TType extends keyof TSchemas & string>(
       selector: EventSelector & { type: TType },
       resolve: Resolver<SchemaOutput<TSchemas[TType]>, TTags, TPaths, TLayer>,
-    ): InternalRule<EventOutput<TSchemas>, TTags, TPaths, TLayer>
-    (
-      selector: EventSelector,
-      action: DeclarativeRule<TTags, TPaths>,
-    ): InternalRule<EventOutput<TSchemas>, TTags, TPaths, TLayer>
+    ): object
+    (selector: EventSelector, action: DeclarativeRule<TTags, TPaths>): object
     (
       selector: EventSelector,
       resolve: Resolver<EventOutput<TSchemas>, TTags, TPaths, TLayer>,
-    ): InternalRule<EventOutput<TSchemas>, TTags, TPaths, TLayer>
+    ): object
     (
       resourceKeys: IsCanonicalData<EventOutput<TSchemas>> extends never
         ? never
         : string | readonly string[],
       action: DeclarativeRule<TTags, TPaths>,
-    ): InternalRule<EventOutput<TSchemas>, TTags, TPaths, TLayer>
+    ): object
     (
       resourceKeys: IsCanonicalData<EventOutput<TSchemas>> extends never
         ? never
         : string | readonly string[],
       resolve: Resolver<EventOutput<TSchemas>, TTags, TPaths, TLayer>,
-    ): InternalRule<EventOutput<TSchemas>, TTags, TPaths, TLayer>
+    ): object
   }
 }
 
@@ -180,7 +169,7 @@ export type DefineRevalidationInput<
   profile?: CacheProfile
   rules: (
     helpers: RuleHelpers<EventSchemas<TSchemas>, TTags, TPaths, keyof TExecutors & string>,
-  ) => RulesOutput<EventOutput<TSchemas>, TTags, TPaths, keyof TExecutors & string>
+  ) => RulesOutput<EventOutput<TSchemas>, TTags, TPaths>
   execute?: TExecutors
   maxBodyBytes?: number
   bodyTimeoutMs?: number
