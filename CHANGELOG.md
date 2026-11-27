@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+### Minor Changes
+
+- 0090aca: Require explicit Payload CloudEvents sources, resolve consumer schemas by event type, and use native
+  Next.js cache profiles and path scopes with optional source allowlists.
+
 ## 0.4.0
 
 ### Minor Changes
