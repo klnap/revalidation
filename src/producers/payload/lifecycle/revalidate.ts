@@ -5,7 +5,7 @@ import type {
 } from 'payload'
 
 import type { Dispatcher } from '../../../core/index.js'
-import { pathValueProblem } from '../../../core/param-values.js'
+import { urlSegmentProblem } from '../../../core/url-segment.js'
 import { resolveExcludeFields } from '../exclude-fields.js'
 import { isLocaleRestoreReq } from '../publish-all/restore-guard.js'
 import {
@@ -50,6 +50,7 @@ import { draftVersionsEnabled } from './skip-rules.js'
 import type { RevalidateArgs, RevalidationChange } from './types.js'
 
 export type RevalidationHookOptions = {
+  source: string
   pluginExcludeFields?: readonly string[]
   pluginCollectionExcludeFields?: Readonly<Record<string, readonly string[]>>
   pluginGlobalExcludeFields?: Readonly<Record<string, readonly string[]>>
@@ -205,7 +206,7 @@ export const readCollectionRouteSlug = (
 
   const slug = doc.slug
   if (typeof slug !== 'string' || slug.length === 0) return undefined
-  const problem = pathValueProblem(slug)
+  const problem = slug.length > 256 ? 'longer than 256 characters' : urlSegmentProblem(slug)
   if (problem) {
     // The event carries no slug for this document; the reason is logged, not silently dropped.
     revalidationLog.warn(
@@ -236,6 +237,33 @@ const readChangeIdentifiers = (
   )
 }
 
+const identifierChangedForDocs = (
+  args: RevalidateArgs,
+  locale: string,
+  currentDoc: Record<string, unknown>,
+  previousDoc: Record<string, unknown>,
+  identifiers: readonly RevalidationIdentifierField[],
+): boolean => {
+  if (!('collection' in args)) return false
+  if (identifiers.length === 0) {
+    const previous = readCollectionRouteSlug(args, locale, previousDoc)
+    return previous !== undefined && previous !== readCollectionRouteSlug(args, locale, currentDoc)
+  }
+  const current = readIdentifierValues({
+    collection: args.collection,
+    paths: identifiers,
+    doc: currentDoc,
+    locale,
+  })
+  const previous = readIdentifierValues({
+    collection: args.collection,
+    paths: identifiers,
+    doc: previousDoc,
+    locale,
+  })
+  return identifierChanged(identifiers, current, previous)
+}
+
 type RevalidationLocaleScope = {
   locales: string[]
   /** Slug/identifier changed in one locale — refresh every published locale (e.g. language switcher slugs). */
@@ -259,8 +287,7 @@ const resolveRevalidationLocaleScope = async (
   const meta = readRevalidationCustom(args.collection.custom)
   if (!meta) return { locales, identifierChangedOnDocument: false }
 
-  const { identifiers } = normalizeCollectionRevalidation(meta)
-  if (identifiers.length === 0) return { locales, identifierChangedOnDocument: false }
+  const identifiers = normalizeCollectionRevalidation(meta).identifiers
 
   let anyIdentifierChanged = false
 
@@ -274,19 +301,7 @@ const resolveRevalidationLocaleScope = async (
     const previousDoc = await fetchPreviousLocaleDoc({ args, locale })
     if (!previousDoc) continue
 
-    const current = readIdentifierValues({
-      collection: args.collection,
-      paths: identifiers,
-      doc: currentDoc,
-      locale,
-    })
-    const previous = readIdentifierValues({
-      collection: args.collection,
-      paths: identifiers,
-      doc: previousDoc,
-      locale,
-    })
-    if (identifierChanged(identifiers, current, previous)) {
+    if (identifierChangedForDocs(args, locale, currentDoc, previousDoc, identifiers)) {
       anyIdentifierChanged = true
       break
     }
@@ -311,7 +326,7 @@ const resolveRevalidationLocaleScope = async (
 export const runRevalidationHook = async (
   args: RevalidateArgs,
   dispatcher: Dispatcher,
-  options: RevalidationHookOptions = {},
+  options: RevalidationHookOptions,
 ): Promise<void> => {
   const { req, doc } = args
   const operation = getOperation(args)
@@ -484,25 +499,14 @@ export const runRevalidationHook = async (
       identifiers,
     })
 
-    if (identifiers.length > 0 && 'collection' in args) {
-      const current = readIdentifierValues({
-        collection: args.collection,
-        paths: identifiers,
-        doc: localeDoc,
-        locale,
-      })
-      const previous = readIdentifierValues({
-        collection: args.collection,
-        paths: identifiers,
-        doc: localePreviousDoc,
-        locale,
-      })
-      if (identifierChanged(identifiers, current, previous)) {
-        // Old values (previous doc) and new values (current doc) both reach the receiver.
-        pushChange(localePreviousDoc)
-        pushChange(localeDoc, previousOrderFor(), true)
-        continue
-      }
+    if (
+      'collection' in args &&
+      identifierChangedForDocs(args, locale, localeDoc, localePreviousDoc, identifiers)
+    ) {
+      // Old values (previous doc) and new values (current doc) both reach the receiver.
+      pushChange(localePreviousDoc)
+      pushChange(localeDoc, previousOrderFor(), true)
+      continue
     }
 
     if (
@@ -573,7 +577,7 @@ export const runRevalidationHook = async (
 
   logRevalidateDispatch(logger, subject, posted, skipped, docId)
 
-  await dispatchRevalidationChanges({ req, changes, logger, dispatcher })
+  await dispatchRevalidationChanges({ req, changes, source: options.source, logger, dispatcher })
 }
 
 /**
@@ -583,7 +587,7 @@ export const runRevalidationHook = async (
 export const runRevalidationHookFailOpen = async (
   args: RevalidateArgs,
   dispatcher: Dispatcher,
-  options: RevalidationHookOptions = {},
+  options: RevalidationHookOptions,
 ): Promise<void> => {
   try {
     await runRevalidationHook(args, dispatcher, options)
@@ -598,7 +602,7 @@ export const runRevalidationHookFailOpen = async (
 
 export const createCollectionRevalidateAfterChange = (
   dispatcher: Dispatcher,
-  options: RevalidationHookOptions = {},
+  options: RevalidationHookOptions,
 ): CollectionAfterChangeHook => {
   return async (args) => {
     await runRevalidationHookFailOpen(args, dispatcher, options)
@@ -608,7 +612,7 @@ export const createCollectionRevalidateAfterChange = (
 
 export const createCollectionRevalidateAfterDelete = (
   dispatcher: Dispatcher,
-  options: RevalidationHookOptions = {},
+  options: RevalidationHookOptions,
 ): CollectionAfterDeleteHook => {
   return async (args) => {
     await runRevalidationHookFailOpen(args, dispatcher, options)
@@ -617,7 +621,7 @@ export const createCollectionRevalidateAfterDelete = (
 
 export const createGlobalRevalidateAfterChange = (
   dispatcher: Dispatcher,
-  options: RevalidationHookOptions = {},
+  options: RevalidationHookOptions,
 ): GlobalAfterChangeHook => {
   return async (args) => {
     await runRevalidationHookFailOpen(args, dispatcher, options)

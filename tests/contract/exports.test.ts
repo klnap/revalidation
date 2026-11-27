@@ -4,9 +4,7 @@ import { readFile } from 'node:fs/promises'
 const publicExports = {
   '.': [
     'CacheConfigurationError',
-    'CacheExecutionError',
     'CacheRequestError',
-    'CacheResolutionError',
     'CacheSchemaError',
     'CacheSourceError',
     'CLOUDEVENTS_BATCH_JSON',
@@ -17,9 +15,10 @@ const publicExports = {
     'matchesEventSelector',
     'matchingAffectedResources',
     'parseCloudEvents',
+    'resourceChangedEventType',
+    'resourceChangedSchema',
     'validateStandardSchema',
   ],
-  './sources/payload': ['payloadEventType', 'payloadSchema', 'payloadSource'],
   './producers/payload': [
     'RevalidationExcludeFieldsError',
     'normalizeExcludeFields',

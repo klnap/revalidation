@@ -20,23 +20,22 @@ export type {
 } from './event-selector.js'
 export { validateStandardSchema } from './standard-schema.js'
 export {
+  resourceChangedEventType,
+  resourceChangedSchema,
+} from './resource-changed-schema.js'
+export type { ResourceChangedData } from './resource-changed-schema.js'
+export {
   CacheConfigurationError,
-  CacheExecutionError,
   CacheRequestError,
-  CacheResolutionError,
   CacheSchemaError,
   CacheSourceError,
 } from './errors.js'
 export type {
-  CacheEntry,
-  CacheMode,
   DispatchError,
   DeliveryStatus,
   Dispatcher,
   DispatchInput,
   DispatchOutcome,
-  InspectResult,
-  LayerOperations,
   Logger,
   TargetDispatchResult,
 } from './types.js'

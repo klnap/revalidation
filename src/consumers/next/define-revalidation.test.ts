@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Webhook } from 'standardwebhooks'
-import { payloadSchema, payloadSource } from '../../sources/payload/index.js'
+import * as v from 'valibot'
+import { resourceChangedEventType } from '../../core/resource-changed-schema.js'
 
-const revalidateTag = mock(() => {})
-const revalidatePath = mock(() => {})
+const revalidateTag = mock((_tag: string, _profile: unknown) => {})
+const revalidatePath = mock((_path: string, _type?: string) => {})
 mock.module('next/cache.js', () => ({ revalidateTag, revalidatePath }))
 const { defineRevalidation } = await import('./index.js')
 
 const secret = `whsec_${Buffer.from('consumer-test-secret').toString('base64')}`
+const source = 'https://cms.example/revalidation'
 
 const signedRequest = (body: unknown, contentType = 'application/cloudevents+json') => {
   const raw = JSON.stringify(body)
@@ -25,10 +27,10 @@ const signedRequest = (body: unknown, contentType = 'application/cloudevents+jso
   })
 }
 
-const event = (data: unknown, source = payloadSource) => ({
+const event = (data: unknown, eventSource = source) => ({
   specversion: '1.0',
   id: 'rev_1',
-  source,
+  source: eventSource,
   type: 'com.klnap.revalidation.resource.changed.v1',
   datacontenttype: 'application/json',
   data,
@@ -37,13 +39,12 @@ const event = (data: unknown, source = payloadSource) => ({
 const makeConsumer = () =>
   defineRevalidation({
     secret,
-    sources: { [payloadSource]: payloadSchema },
     tags: { page: '[locale]:page:[slug]' },
     paths: { page: '/[locale]/[slug]' },
     rules: ({ tags, paths, on }) => [
       on(
         {
-          source: payloadSource,
+          type: resourceChangedEventType,
           affected: { type: 'payload.collection', name: 'pages' },
         },
         ({ affected }) => ({
@@ -68,6 +69,399 @@ beforeEach(() => {
 })
 
 describe('defineRevalidation', () => {
+  it('uses the built-in resource-change schema and applies declarative rules to old and new identifiers', async () => {
+    const { tags, paths, POST } = defineRevalidation({
+      secret,
+      tags: {
+        projects: '[locale]:projects',
+        project: '[locale]:project:[slug]',
+        homepage: '[locale]:homepage',
+      },
+      paths: { project: '/[locale]/work/[slug]' },
+      rules: ({ tags, paths }) => ({
+        'payload.collection.projects': {
+          tags: [tags.projects, tags.project, tags.homepage],
+          paths: [paths.project],
+        },
+      }),
+    })
+
+    expect(tags.project({ locale: 'pl', slug: 'example' })).toBe('pl:project:example')
+    expect(paths.project({ locale: 'pl', slug: 'example' })).toBe('/pl/work/example')
+
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'projects', locale: 'pl', slug: 'new' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'projects', locale: 'pl', slug: 'old' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'projects', locale: 'pl', slug: 'new' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'projects', locale: 'pl', slug: 'old' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(200)
+    expect(revalidateTag.mock.calls.map(([tag]) => tag)).toEqual([
+      'pl:projects',
+      'pl:project:old',
+      'pl:project:new',
+      'pl:homepage',
+    ])
+    expect(revalidatePath.mock.calls.map(([path]) => path)).toEqual([
+      '/pl/work/old',
+      '/pl/work/new',
+    ])
+  })
+
+  it('expands flat mappings across previous and current identifiers and bounds cache planning', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      maxOperations: 5,
+      tags: {
+        pages: '[locale]:pages',
+        page: '[locale]:page:[slug]',
+      },
+      paths: { page: '/[locale]/[slug]' },
+      rules: ({ tags, paths }) => ({
+        'payload.collection.pages': {
+          tags: [tags.pages, tags.page],
+          paths: [paths.page],
+        },
+      }),
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'new' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'old' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'new' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(413)
+    expect(revalidateTag).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates flat mapping operations for old and current identifiers', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      tags: {
+        pages: '[locale]:pages',
+        page: '[locale]:page:[slug]',
+      },
+      paths: { page: '/[locale]/[slug]' },
+      rules: ({ tags, paths }) => ({
+        'payload.collection.pages': {
+          tags: [tags.pages, tags.page],
+          paths: [paths.page],
+        },
+      }),
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'new' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'old' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'new' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: 'old' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(200)
+    expect(revalidateTag.mock.calls.map(([tag]) => tag)).toEqual([
+      'pl:pages',
+      'pl:page:old',
+      'pl:page:new',
+    ])
+    expect(revalidatePath.mock.calls.map(([path]) => path)).toEqual(['/pl/old', '/pl/new'])
+  })
+
+  it('resolves global, rule, and per-tag profiles while expanding previous and current references', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      profile: 'hours',
+      tags: {
+        articles: '[locale]:articles',
+        article: '[locale]:article:[slug]',
+        homepage: '[locale]:homepage',
+        sitemap: 'sitemap',
+        redirects: 'redirects',
+      },
+      rules: ({ tags }) => ({
+        'payload.collection.articles': {
+          profile: 'editorial',
+          tags: [
+            tags.articles,
+            [tags.article, { expire: 0 }],
+            tags.homepage,
+            [tags.sitemap, { expire: 3600 }],
+          ],
+        },
+        'payload.collection.redirects': [tags.redirects],
+      }),
+    })
+
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'articles' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'articles', locale: 'en', slug: 'old' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'articles', locale: 'en', slug: 'new' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'redirects', locale: 'en' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(200)
+    expect(revalidateTag.mock.calls).toEqual([
+      ['en:articles', 'editorial'],
+      ['en:article:old', { expire: 0 }],
+      ['en:article:new', { expire: 0 }],
+      ['en:homepage', 'editorial'],
+      ['sitemap', { expire: 3600 }],
+      ['redirects', 'hours'],
+    ])
+  })
+
+  it('rejects conflicting native profiles for one tag independently of batch order', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      profile: 'max',
+      tags: { homepage: 'homepage' },
+      rules: ({ tags }) => ({
+        'payload.collection.articles': { profile: 'max', tags: [tags.homepage] },
+        'payload.global.navigation': { profile: { expire: 0 }, tags: [tags.homepage] },
+      }),
+    })
+    const makeEvent = (id: string, resource: { type: string; name: string }) => ({
+      ...event({
+        operation: 'update',
+        resource,
+        affected: [{ operation: 'update', resource }],
+      }),
+      id,
+    })
+    const article = makeEvent('article-event', {
+      type: 'payload.collection',
+      name: 'articles',
+    })
+    const navigation = makeEvent('navigation-event', {
+      type: 'payload.global',
+      name: 'navigation',
+    })
+
+    for (const events of [
+      [article, navigation],
+      [navigation, article],
+    ]) {
+      revalidateTag.mockClear()
+      const response = await POST(signedRequest(events, 'application/cloudevents-batch+json'))
+
+      expect(response.status).toBe(400)
+      expect(revalidateTag).not.toHaveBeenCalled()
+    }
+  })
+
+  it('rejects incomparable named profiles for one tag without calling Next.js', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      tags: { homepage: 'homepage' },
+      rules: ({ tags }) => ({
+        'payload.collection.articles': { profile: 'hours', tags: [tags.homepage] },
+        'payload.global.navigation': { profile: 'editorial', tags: [tags.homepage] },
+      }),
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'articles' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'articles' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.global', name: 'navigation' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(400)
+    expect(revalidateTag).not.toHaveBeenCalled()
+  })
+
+  it('rejects profile conflicts before running a custom plan', async () => {
+    const execute = mock(() => {
+      throw new Error('index failed')
+    })
+    const { POST } = defineRevalidation({
+      secret,
+      tags: { homepage: 'homepage' },
+      rules: ({ tags, on }) => [
+        on(
+          {
+            type: resourceChangedEventType,
+            affected: { type: 'payload.collection', name: 'articles' },
+          },
+          () => ({
+            operations: [{ layer: 'index', value: 'article' }],
+            tags: [[tags.homepage, { expire: 0 }]],
+          }),
+        ),
+        on(
+          {
+            type: resourceChangedEventType,
+            affected: { type: 'payload.global', name: 'navigation' },
+          },
+          () => ({ tags: [[tags.homepage, 'max']] }),
+        ),
+      ],
+      execute: {
+        index: execute,
+      },
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'articles' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'articles' },
+            },
+            {
+              operation: 'update',
+              resource: { type: 'payload.global', name: 'navigation' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(400)
+    expect(execute).not.toHaveBeenCalled()
+    expect(revalidateTag).not.toHaveBeenCalled()
+  })
+
+  it('reports missing automatic template parameters without invalidating a malformed key', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      paths: { page: '/[locale]/[slug]' },
+      rules: ({ paths }) => ({
+        'payload.collection.pages': { paths: [paths.page] },
+      }),
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages' },
+          affected: [
+            { operation: 'update', resource: { type: 'payload.collection', name: 'pages' } },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(500)
+    expect(revalidatePath).not.toHaveBeenCalled()
+    expect(await response.json()).toMatchObject({
+      results: [
+        {
+          layer: 'next',
+          operation: 'template',
+          status: 'skipped',
+          error: { code: 'MISSING_TEMPLATE_PARAM' },
+        },
+      ],
+    })
+  })
+
+  it('rejects unsafe path parameters from affected resource data before invalidation', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      paths: { page: '/[locale]/[slug]' },
+      rules: ({ paths }) => ({
+        'payload.collection.pages': { paths: [paths.page] },
+      }),
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages', locale: 'pl', slug: '../private' },
+          affected: [
+            {
+              operation: 'update',
+              resource: {
+                type: 'payload.collection',
+                name: 'pages',
+                locale: 'pl',
+                slug: '../private',
+              },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(400)
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
   it('builds typed cache helpers and executes matching rules', async () => {
     const { tags, paths, POST } = makeConsumer()
 
@@ -94,6 +488,29 @@ describe('defineRevalidation', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/en/home')
   })
 
+  it('rejects validly signed events with unregistered types before cache invalidation', async () => {
+    const { POST } = makeConsumer()
+    const response = await POST(
+      signedRequest({
+        ...event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages', locale: 'en', slug: 'home' },
+          affected: [
+            {
+              operation: 'update',
+              resource: { type: 'payload.collection', name: 'pages', locale: 'en', slug: 'home' },
+            },
+          ],
+        }),
+        type: 'com.example.unregistered.v1',
+      }),
+    )
+
+    expect(response.status).toBe(400)
+    expect(revalidateTag).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
   it('validates the whole batch before running any cache operation', async () => {
     const { POST } = makeConsumer()
     const response = await POST(
@@ -115,6 +532,73 @@ describe('defineRevalidation', () => {
     expect(revalidatePath).not.toHaveBeenCalled()
   })
 
+  it('validates custom schemas by event type and enforces allowedSources before execution', async () => {
+    const executed = mock((_value: unknown) => {})
+    const { POST } = defineRevalidation({
+      secret,
+      schemas: { 'com.example.billing.changed.v1': v.object({ key: v.string() }) },
+      allowedSources: [source],
+      rules: ({ on }) => [
+        on({ type: 'com.example.billing.changed.v1' }, ({ data }) => ({
+          operations: [{ layer: 'index', value: data.key }],
+        })),
+      ],
+      execute: { index: ({ value }) => executed(value) },
+    })
+    const allowed = event({ key: 'billing' })
+    const customEvent = {
+      ...allowed,
+      type: 'com.example.billing.changed.v1',
+    }
+
+    expect((await POST(signedRequest(customEvent))).status).toBe(200)
+    expect(executed).toHaveBeenCalledWith('billing')
+    executed.mockClear()
+
+    expect(
+      (await POST(signedRequest({ ...customEvent, source: 'https://untrusted.example/events' })))
+        .status,
+    ).toBe(400)
+    expect(executed).not.toHaveBeenCalled()
+  })
+
+  it('does not allow custom schemas to replace the built-in event contract', () => {
+    expect(() =>
+      defineRevalidation({
+        secret,
+        schemas: { [resourceChangedEventType]: v.object({ key: v.string() }) },
+        rules: () => [],
+      }),
+    ).toThrow(`schema for ${resourceChangedEventType} is built in`)
+  })
+
+  it('deduplicates repeated event identities but executes equal IDs from distinct sources', async () => {
+    const execute = mock(() => {})
+    const { POST } = defineRevalidation({
+      secret,
+      rules: ({ on }) => [
+        on({ type: resourceChangedEventType }, () => ({
+          operations: [{ layer: 'index', value: 'page' }],
+        })),
+      ],
+      execute: { index: execute },
+    })
+    const payload = {
+      operation: 'update',
+      resource: { type: 'payload.collection', name: 'pages' },
+      affected: [],
+    }
+    const events = [
+      { ...event(payload), id: 'same-id' },
+      { ...event(payload), id: 'same-id' },
+      { ...event(payload, 'https://other.example/revalidation'), id: 'same-id' },
+    ]
+    const response = await POST(signedRequest(events, 'application/cloudevents-batch+json'))
+
+    expect(response.status).toBe(200)
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
+
   it('combines object mappings and on rules with sequential custom execution', async () => {
     const order: string[] = []
     revalidateTag.mockImplementation(() => {
@@ -122,33 +606,34 @@ describe('defineRevalidation', () => {
     })
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       tags: { page: '[locale]:page:[slug]' },
       rules: ({ tags, on }) => [
-        {
-          'payload.collection': {
-            pages: ({ affected }) => ({
-              operations: [
-                ...affected.map(({ resource }) => ({
-                  layer: 'index',
-                  value: { id: resource.id, slug: resource.slug },
-                })),
-                ...affected.map(({ resource }) => ({
-                  layer: 'index',
-                  value: { id: resource.id, slug: resource.slug },
-                })),
-              ],
-              tags: affected.flatMap(({ resource }) =>
-                resource.locale && resource.slug
-                  ? [tags.page({ locale: resource.locale, slug: resource.slug })]
-                  : [],
-              ),
-            }),
-          },
-        },
         on(
           {
-            source: payloadSource,
+            type: resourceChangedEventType,
+            affected: { type: 'payload.collection', name: 'pages' },
+          },
+          ({ affected }) => ({
+            operations: [
+              ...affected.map(({ resource }) => ({
+                layer: 'index',
+                value: { id: resource.id, slug: resource.slug },
+              })),
+              ...affected.map(({ resource }) => ({
+                layer: 'index',
+                value: { id: resource.id, slug: resource.slug },
+              })),
+            ],
+            tags: affected.flatMap(({ resource }) =>
+              resource.locale && resource.slug
+                ? [tags.page({ locale: resource.locale, slug: resource.slug })]
+                : [],
+            ),
+          }),
+        ),
+        on(
+          {
+            type: resourceChangedEventType,
             affected: { type: 'payload.collection', name: 'categories' },
           },
           () => ({ tags: [tags.page({ locale: 'en', slug: 'category-list' })] }),
@@ -187,7 +672,12 @@ describe('defineRevalidation', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(order).toEqual(['index:{"id":"page-1","slug":"guide"}:update:1', 'next', 'next'])
+    expect(order).toEqual([
+      'index:{"id":"page-1","slug":"guide"}:update:1',
+      'index:{"id":"page-1","slug":"guide"}:update:1',
+      'next',
+      'next',
+    ])
     revalidateTag.mockImplementation(() => {})
     expect(revalidateTag).toHaveBeenCalledWith('en:page:guide', { expire: 0 })
     expect(revalidateTag).toHaveBeenCalledWith('en:page:category-list', { expire: 0 })
@@ -205,11 +695,13 @@ describe('defineRevalidation', () => {
     const search = mock(() => {})
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       tags: { page: '[slug]' },
       rules: ({ tags, on }) => [
         on(
-          { source: payloadSource, affected: { type: 'payload.collection', name: 'pages' } },
+          {
+            type: resourceChangedEventType,
+            affected: { type: 'payload.collection', name: 'pages' },
+          },
           () => ({
             operations: [
               { layer: 'index', value: { id: 'page-1' } },
@@ -219,7 +711,10 @@ describe('defineRevalidation', () => {
           }),
         ),
         on(
-          { source: payloadSource, affected: { type: 'payload.collection', name: 'categories' } },
+          {
+            type: resourceChangedEventType,
+            affected: { type: 'payload.collection', name: 'categories' },
+          },
           () => ({ tags: [tags.page({ slug: 'categories' })] }),
         ),
       ],
@@ -264,6 +759,63 @@ describe('defineRevalidation', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
+  it('inherits native tag profiles and passes literal route scopes without inferring types for URLs', async () => {
+    const { POST } = defineRevalidation({
+      secret,
+      profile: 'global-profile',
+      rules: ({ on }) => [
+        on({ type: resourceChangedEventType }, () => ({
+          profile: 'rule-profile',
+          tags: [['one', 'tag-profile'], ['two'], 'three'],
+          paths: ['/reports/concrete', ['/reports/[slug]', 'page'], ['/site', 'layout']],
+        })),
+      ],
+    })
+    const response = await POST(
+      signedRequest(
+        event({
+          operation: 'update',
+          resource: { type: 'payload.collection', name: 'pages' },
+          affected: [
+            { operation: 'update', resource: { type: 'payload.collection', name: 'pages' } },
+          ],
+        }),
+      ),
+    )
+
+    expect(response.status).toBe(200)
+    expect(revalidateTag.mock.calls).toEqual([
+      ['one', 'tag-profile'],
+      ['two', 'rule-profile'],
+      ['three', 'rule-profile'],
+    ])
+    expect(revalidatePath.mock.calls).toEqual([
+      ['/reports/concrete'],
+      ['/reports/[slug]', 'page'],
+      ['/site', 'layout'],
+    ])
+  })
+
+  it('rejects conflicting tag profiles before custom or Next.js side effects', async () => {
+    const execute = mock(() => {})
+    const { POST } = defineRevalidation({
+      secret,
+      rules: ({ on }) => [
+        on({ type: resourceChangedEventType }, () => ({
+          tags: [['shared', 'first']],
+          operations: [{ layer: 'index', value: 'one' }],
+        })),
+        on({ type: resourceChangedEventType }, () => ({ tags: [['shared', 'second']] })),
+      ],
+      execute: { index: execute },
+    })
+    const response = await POST(signedRequest(event({ operation: 'update', affected: [] })))
+
+    expect(response.status).toBe(400)
+    expect(execute).not.toHaveBeenCalled()
+    expect(revalidateTag).not.toHaveBeenCalled()
+  })
+
   it('rejects invalid signatures and non-POST methods', async () => {
     const { POST } = makeConsumer()
     const badSignature = signedRequest(event({}), 'application/cloudevents+json')
@@ -287,7 +839,6 @@ describe('defineRevalidation', () => {
     })
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       bodyTimeoutMs: 5,
       rules: () => ({}),
     })
@@ -306,11 +857,10 @@ describe('defineRevalidation', () => {
     const controllerSignals: AbortSignal[] = []
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       executionTimeoutMs: 5,
       maxOperations: 1,
       rules: ({ on }) => [
-        on({ source: payloadSource }, () => ({
+        on({ type: resourceChangedEventType }, () => ({
           operations: [
             { layer: 'index', value: 'one' },
             { layer: 'index', value: 'two' },
@@ -345,10 +895,9 @@ describe('defineRevalidation', () => {
     let stoppedCooperatively = false
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       executionTimeoutMs: 5,
       rules: ({ on }) => [
-        on({ source: payloadSource }, () => ({
+        on({ type: resourceChangedEventType }, () => ({
           operations: [{ layer: 'index', value: 'one' }],
         })),
       ],
@@ -396,10 +945,9 @@ describe('defineRevalidation', () => {
     try {
       const { POST } = defineRevalidation({
         secret,
-        sources: { [payloadSource]: payloadSchema },
         executionTimeoutMs: 5,
         rules: ({ on }) => [
-          on({ source: payloadSource }, () => ({
+          on({ type: resourceChangedEventType }, () => ({
             operations: [
               { layer: 'index', value: 'product-1' },
               { layer: 'search', value: 'product-1' },
@@ -461,10 +1009,9 @@ describe('defineRevalidation', () => {
     const search = mock(() => {})
     const { POST } = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       executionTimeoutMs: 5,
       rules: ({ on }) => [
-        on({ source: payloadSource }, () => ({
+        on({ type: resourceChangedEventType }, () => ({
           operations: [
             { layer: 'index', value: 'product-1' },
             { layer: 'search', value: 'product-1' },

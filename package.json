@@ -1,7 +1,7 @@
 {
   "name": "@klnap/revalidation",
   "version": "0.4.0",
-  "description": "Declarative, type-safe cache revalidation.",
+  "description": "Declarative, type-safe cache invalidation across applications with a framework-independent event protocol and native Payload CMS, HTTP, and Next.js integrations.",
   "keywords": [
     "revalidation",
     "cache",
@@ -29,10 +29,6 @@
     ".": {
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
-    },
-    "./sources/payload": {
-      "types": "./dist/sources/payload/index.d.ts",
-      "default": "./dist/sources/payload/index.js"
     },
     "./producers/payload": {
       "types": "./dist/producers/payload/index.d.ts",

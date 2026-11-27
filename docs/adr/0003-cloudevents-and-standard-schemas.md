@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for the 0.4.0 redesign.
+Accepted. Event-type lookup and explicit producer source apply to the 0.5.0 redesign.
 
 ## Context
 
@@ -21,6 +21,13 @@ transformed output contract.
 - Define the package's resource-change profile in `docs/specification/0.4.0.md`.
 - Use Standard Schema V1 for application `data` schemas. Await sync or async validation and use the
   returned output value.
+- Resolve schemas by CloudEvents `type`, not `source`. Keep `source` as producer identity and allow
+  consumers to restrict it with an optional exact `allowedSources` list.
+- Always register the built-in resource-change schema for
+  `com.klnap.revalidation.resource.changed.v1`; reject attempts to replace it.
+- Require every Payload producer to set a stable absolute-URI `source`. Do not publish an implicit
+  package-wide source value.
+- Treat `(source, id)` as event identity for duplicate-event suppression.
 - Keep envelope validation separate from application-schema validation.
 - Implement only the JSON event and batch profile. Do not add a CloudEvents SDK dependency unless
   the package later needs broader formats or protocol bindings.

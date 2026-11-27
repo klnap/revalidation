@@ -1,7 +1,8 @@
 # Next.js consumer
 
-The Next.js consumer verifies Standard Webhooks signatures, validates CloudEvents and source data,
-matches rules, then invalidates tags and paths. It does not depend on Payload.
+The Next.js consumer authenticates signed deliveries, validates the full event batch, maps changed
+resources to cache operations, and then runs the operations. It does not require Payload or any
+source/schema registry for the built-in resource-change event.
 
 Requires Next.js `>=16.4.5 <17`. Keep the secret-bearing configuration in a server-only module.
 
@@ -11,30 +12,25 @@ Requires Next.js `>=16.4.5 <17`. Keep the secret-bearing configuration in a serv
 // src/revalidation.ts
 import 'server-only'
 import { defineRevalidation } from '@klnap/revalidation/consumers/next'
-import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
 
 export const { tags, paths, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  sources: { [payloadSource]: payloadSchema },
-  tags: { page: '[locale]:page:[slug]' },
-  paths: { page: '/[locale]/[slug]' },
-  rules: ({ tags, paths, on }) => [
-    on(
-      { source: payloadSource, affected: { type: 'payload.collection', name: 'pages' } },
-      ({ affected }) => ({
-        tags: affected.flatMap(({ resource }) =>
-          resource.locale && resource.slug
-            ? [tags.page({ locale: resource.locale, slug: resource.slug })]
-            : [],
-        ),
-        paths: affected.flatMap(({ resource }) =>
-          resource.locale && resource.slug
-            ? [paths.page({ locale: resource.locale, slug: resource.slug })]
-            : [],
-        ),
-      }),
-    ),
-  ],
+
+  tags: {
+    pages: '[locale]:pages',
+    page: '[locale]:page:[slug]',
+  },
+
+  paths: {
+    page: '/[locale]/[slug]',
+  },
+
+  rules: ({ tags, paths }) => ({
+    'payload.collection.pages': {
+      tags: [tags.pages, tags.page],
+      paths: [paths.page],
+    },
+  }),
 })
 ```
 
@@ -45,14 +41,32 @@ Re-export the bound handler:
 export { POST } from '@/revalidation'
 ```
 
-`defineRevalidation()` binds one handler to its configuration. It uses no process-global registry.
+The built-in `com.klnap.revalidation.resource.changed.v1` schema is selected by event `type`.
+Schema registration is only needed for additional event contracts. `source` identifies a producer;
+`allowedSources` optionally restricts accepted identities. These are separate from webhook
+authentication, which uses `secret`.
 
-## Typed cache templates
+## Templates and automatic mapping
 
-Template parameters in brackets become required helper arguments:
+Template placeholders become required parameters in application code:
 
-When using `cacheTag` with the `'use cache'` directive, enable `cacheComponents: true` in
-`next.config.ts`. This is a Next.js requirement; the package does not change your Next.js config.
+```ts
+tags.page({ locale: 'pl', slug: 'about' }) // "pl:page:about"
+paths.page({ locale: 'pl', slug: 'about' }) // "/pl/about"
+```
+
+The same typed helpers can be used as declarative rule references. The consumer resolves parameters
+from each validated affected resource, including `locale`, `slug`, `id`, and configured
+`identifiers`. Payload emits old and current resources when an identifier changes, so a mapping
+invalidates both without a callback or loop. Equivalent cache operations are deduplicated.
+
+Missing parameters do not produce partial success: that template operation is skipped, the request
+returns an error, and a structured diagnostic is reported. Unsafe path values—including separators,
+malformed percent escapes, dot segments, query delimiters, and fragment delimiters—fail validation.
+Do not use untrusted values to construct arbitrary cache profiles or custom operation payloads.
+
+For cached functions using `'use cache'` and `cacheTag`, enable `cacheComponents: true` in
+`next.config.ts`:
 
 ```ts
 import type { NextConfig } from 'next'
@@ -62,83 +76,124 @@ export default nextConfig
 ```
 
 ```ts
-import { cacheTag } from 'next/cache.js'
+import { cacheTag } from 'next/cache'
 import { tags } from '@/revalidation'
+import { loadPage } from '@/data/pages'
 
 export async function getPage(locale: string, slug: string) {
   'use cache'
   cacheTag(tags.page({ locale, slug }))
-  // Load the page.
+  return loadPage(locale, slug)
 }
 ```
 
-Static templates need no arguments. Values are not escaped; validate untrusted values before using
-them as tag or path parameters. See the Next.js
-[`cacheTag`](https://nextjs.org/docs/app/api-reference/functions/cacheTag) reference.
+`loadPage()` is application-owned. The package does not wrap or replace native Next.js caching.
+See the Next.js [`cacheTag`](https://nextjs.org/docs/app/api-reference/functions/cacheTag) and
+[`revalidatePath`](https://nextjs.org/docs/app/api-reference/functions/revalidatePath) references.
 
 ## Rules and selectors
 
-`on(selector, resolve)` selects CloudEvents by `source`, `type`, root operation/resource, or affected
-resource. The callback receives the validated `event`, its `data`, root fields, all `affected`
-resources, and typed `tags` and `paths`.
-
-Return `tags`, `paths`, or both. A rule may also set `mode`; the top-level mode defaults to `expire`.
-Tag results can override the mode individually. Path results may specify `type: 'page' | 'layout'`.
-See the [Next.js cache API](https://nextjs.org/docs/app/api-reference/functions/revalidateTag).
-
-## Custom cache work
-
-Use `operations` and named `execute` callbacks for app-owned cache work. The handler runs operations
-in order before Next.js tag or path invalidation:
+Group resources with one invalidation policy using an array of mappings:
 
 ```ts
+rules: ({ tags, on }) => [
+  {
+    'payload.collection.pages': [tags.pages, tags.page],
+  },
+  on(
+    ['payload.collection.projects', 'payload.collection.categories'],
+    [tags.homepage],
+  ),
+]
+```
+
+Use structured selectors and resolver callbacks for source/type/operation conditions or
+application-specific decisions. Rules can return tag and path operations, native cache profiles,
+and named custom operations. Use `[tag, profile]` to override a profile for one tag and `[path, type]`
+to invalidate a literal dynamic route pattern. Profiles inherit from the tuple, rule, then
+configuration; tags default to `{ expire: 0 }`. Conflicting profiles for one tag reject the request
+before any custom or Next.js operation runs.
+
+## Custom event types
+
+Register additional Standard Schema V1 validators by CloudEvents `type`. The validated schema
+output is inferred by the matching `on({ type }, resolver)` callback:
+
+```ts
+import * as v from 'valibot'
+
+const type = 'com.example.pricing.changed.v1'
+const schema = v.object({ key: v.string() })
+
 defineRevalidation({
-  secret: process.env.REVALIDATION_SECRET!,
-  sources: { [payloadSource]: payloadSchema },
+  secret,
+  schemas: { [type]: schema },
+  tags: { pricing: 'pricing' },
+  rules: ({ tags, on }) => [
+    on({ type }, ({ data }) => ({
+      tags: data.key === 'pricing' ? [tags.pricing()] : [],
+    })),
+  ],
+})
+```
+
+Add `allowedSources` only when the consumer must restrict producer identities. A source allowlist
+does not replace Standard Webhooks authentication.
+
+## Custom cache operations
+
+Use named `execute` callbacks when invalidation depends on application-owned work such as indexing.
+The callback is awaited in the request lifecycle:
+
+```ts
+import { resourceChangedEventType } from '@klnap/revalidation'
+
+defineRevalidation({
+  secret,
   rules: ({ on }) => [
     on(
-      { source: payloadSource, affected: { type: 'payload.collection', name: 'products' } },
+      { type: resourceChangedEventType, affected: { type: 'payload.collection', name: 'products' } },
       ({ affected }) => ({
-        operations: [
-          {
-            layer: 'search',
-            value: affected.flatMap(({ resource }) => (resource.id ? [resource.id] : [])),
-          },
-        ],
-        tags: affected.flatMap(({ resource }) =>
-          resource.slug ? [`product:${resource.slug}`] : [],
-        ),
+        operations: [{
+          layer: 'index',
+          value: affected.flatMap(({ resource }) => resource.id ? [resource.id] : []),
+        }],
+        tags: ['products'],
       }),
     ),
   ],
   execute: {
-    search: async ({ value, signal }) => {
-      await updateSearchIndex(value, { signal })
-    },
+    index: async ({ value, signal }) => updateProductIndex(value, { signal }),
   },
 })
 ```
 
-Operations run sequentially within each matching rule. A failed operation skips later operations
-and Next.js invalidations from that rule; independent rules continue. Any failure returns HTTP 500
-with per-operation results. Executors receive an `AbortSignal`; the default execution deadline is
-15 seconds, and `executionTimeoutMs` can set a value up to 60 seconds. Executors must honor the
-signal to stop their own work. A timeout stops the handler waiting and sends an abort request; it
-cannot forcibly terminate an executor that ignores the signal or reverse side effects already made.
-Timed-out operations remain failures, later dependent operations stay skipped, and late executor
-completion cannot resume invalidation. The handler limits requests to 1,000 custom operations by
-default; `maxOperations` can raise this to 10,000. This is synchronous best-effort work, not a
-durable queue.
+Custom operations run sequentially per rule before that rule's Next.js cache operations. Failure
+skips dependent work while independent rules continue. Executors receive an `AbortSignal`, but
+cancellation is cooperative: the deadline stops waiting and requests cancellation; it cannot force
+stop work or undo external side effects. This is not a durable queue.
 
 ## Validation and limits
 
-The handler accepts structured CloudEvents JSON and CloudEvents JSON batches only. It verifies the
-request signature before parsing events, checks each event against its source's Standard Schema V1
-validator, and runs no cache operation until every event validates.
+The handler accepts structured CloudEvents JSON and CloudEvents JSON batches. It authenticates the
+request, parses the envelope, checks `allowedSources`, and validates every event before planning or
+executing side effects.
 
-Unknown sources, invalid data, malformed events, and invalid signatures fail the request. The
-default body limit is 256 KiB and the default event limit is 100. Configure `maxBodyBytes` and
-`maxEvents` within the package's hard ceilings. Body reads have a 15-second default deadline;
-`bodyTimeoutMs` can set a value up to 60 seconds.
+| Limit | Default | Hard ceiling |
+| --- | ---: | ---: |
+| Request body | 256 KiB | 16 MiB |
+| Body-read deadline | 15 seconds | 60 seconds |
+| Events per request | 100 | 1,000 |
+| Planned custom and cache operations | 1,000 | 10,000 |
+| Custom operation deadline | 15 seconds | 60 seconds |
 
-See [security](../security.md) for request authentication, replay behavior, and limits.
+The operation limit bounds expanded tags, paths, and custom operations before any are executed.
+The HTTP dispatcher has separate delivery limits; its total dispatch deadline includes the time
+spent across attempts and retry delays, so per-attempt timeouts are not independent total-time
+guarantees. See the [HTTP dispatcher](../dispatchers/http.md), [reliability](../reliability.md),
+and [security](../security.md) references.
+
+Cache profiles use Next.js-native profile strings or `{ expire: number }`; there are no `stale` or
+`expire` aliases. Path strings and typed path references resolve concrete URLs. Use
+`['/blog/[slug]', 'page']` or `['/blog/[slug]', 'layout']` for literal route patterns. Concrete
+URLs are passed to `revalidatePath` without an inferred route type.

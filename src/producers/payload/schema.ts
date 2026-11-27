@@ -1,6 +1,6 @@
 import type { CloudEvent } from '../../core/cloudevents.js'
 import type { RevalidationResource } from '../../core/event-selector.js'
-import { payloadEventType, payloadSource } from '../../sources/payload/index.js'
+import { resourceChangedEventType } from '../../core/resource-changed-schema.js'
 import type { RevalidationChange } from './lifecycle/types.js'
 
 const resourceFor = (change: RevalidationChange): RevalidationResource => {
@@ -19,7 +19,7 @@ const resourceFor = (change: RevalidationChange): RevalidationResource => {
 
 export const changesToRevalidationEvent = (
   changes: RevalidationChange[],
-  source = payloadSource,
+  source: string,
 ): CloudEvent => {
   const root = changes.find((change) => change.root) ?? changes[0]
   if (!root) throw new Error('Cannot create a Payload CloudEvent without changes')
@@ -27,7 +27,7 @@ export const changesToRevalidationEvent = (
     specversion: '1.0',
     id: `rev_${crypto.randomUUID()}`,
     source,
-    type: payloadEventType,
+    type: resourceChangedEventType,
     time: new Date().toISOString(),
     datacontenttype: 'application/json',
     data: {

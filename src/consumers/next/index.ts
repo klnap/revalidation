@@ -2,6 +2,7 @@ export {
   type DefinedRevalidation,
   defineRevalidation,
   type DefineRevalidationInput,
+  type CacheProfile,
   type RevalidationExecutionContext,
   type RevalidationExecutor,
   type RevalidationRuleContext,

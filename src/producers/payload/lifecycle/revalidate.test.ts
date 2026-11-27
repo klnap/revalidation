@@ -15,7 +15,17 @@ import {
   shouldSkipUnchangedLocale,
   shouldSkipUnpublishedLocaleDoc,
 } from './helpers.ts'
-import { runRevalidationHook as runHookUnflushed } from './revalidate.ts'
+import { runRevalidationHook as executeHook } from './revalidate.ts'
+
+const runHookUnflushed = (
+  args: Parameters<typeof executeHook>[0],
+  dispatcher: Parameters<typeof executeHook>[1],
+  options?: Parameters<typeof executeHook>[2],
+) =>
+  executeHook(args, dispatcher, {
+    ...options,
+    source: 'https://cms.example/revalidation',
+  })
 
 const baseReq = {
   query: {} as Record<string, unknown>,
@@ -427,7 +437,7 @@ describe('revalidate', () => {
     const body = JSON.parse(
       (fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body,
     )
-    expect(body.source).toBe('urn:klnap:revalidation:payload')
+    expect(body.source).toBe('https://cms.example/revalidation')
     expect(Array.isArray(body.data.affected)).toBe(true)
     expect(loggerError).toHaveBeenCalled()
   })
@@ -620,7 +630,7 @@ describe('revalidate', () => {
       source: string
       data: { affected: { resource: { locale: string; name?: string } }[] }
     }
-    expect(event.source).toBe('urn:klnap:revalidation:payload')
+    expect(event.source).toBe('https://cms.example/revalidation')
     expect(event.data.affected.map((change) => change.resource.locale)).toEqual(['pl', 'en', 'de'])
     expect(event.data.affected.every((change) => change.resource.name === 'work-page')).toBe(true)
   })
@@ -839,7 +849,7 @@ describe('revalidate', () => {
         collection: { slug: 'projects', versions: { drafts: true } },
       } as unknown as RevalidateArgs,
       dispatcher,
-      { pluginExcludeFields: ['name'] },
+      { source: 'https://cms.example/revalidation', pluginExcludeFields: ['name'] },
     )
 
     expect(fetchMock).not.toHaveBeenCalled()
@@ -905,7 +915,7 @@ describe('revalidate', () => {
         },
       } as unknown as RevalidateArgs,
       dispatcher,
-      { pluginExcludeFields: ['name'] },
+      { source: 'https://cms.example/revalidation', pluginExcludeFields: ['name'] },
     )
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -979,7 +989,7 @@ describe('revalidate', () => {
           slug: 'projects',
           versions: { drafts: { localizeStatus: true } },
           fields: [{ name: 'slug', type: 'text', localized: true }],
-          custom: { revalidation: { identifier: 'slug' } },
+          custom: { revalidation: true },
         },
       } as unknown as RevalidateArgs,
       dispatcher,
@@ -995,6 +1005,13 @@ describe('revalidate', () => {
     expect(postedLocales).toContain('pl')
     expect(postedLocales).toContain('en')
     expect(postedLocales).toContain('de')
+    const plRows = body.data.affected.filter(
+      (row: { resource: { locale: string } }) => row.resource.locale === 'pl',
+    )
+    expect(plRows.map((row: { resource: { slug: string } }) => row.resource.slug)).toEqual([
+      'pl-stary',
+      'pl-nowy',
+    ])
     const enRows = body.data.affected.filter(
       (row: { resource: { locale: string } }) => row.resource.locale === 'en',
     )

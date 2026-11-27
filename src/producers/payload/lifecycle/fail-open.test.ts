@@ -35,7 +35,11 @@ describe('read errors while building an event', () => {
     const dispatcher = {
       dispatch: async () => ({ status: 'accepted' as const, results: [] }),
     }
-    await expect(runRevalidationHookFailOpen(args, dispatcher)).resolves.toBeUndefined()
+    await expect(
+      runRevalidationHookFailOpen(args, dispatcher, {
+        source: 'https://cms.example/revalidation',
+      }),
+    ).resolves.toBeUndefined()
     expect(errors.some((m) => m.includes('database unavailable'))).toBe(true)
   })
 })

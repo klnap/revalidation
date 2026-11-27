@@ -48,8 +48,8 @@ export type PluginSchemaExcludeConfig = {
 
 export type PayloadRevalidationPluginConfig = {
   dispatcher: DispatcherSelection
-  /** Absolute CloudEvents source URI. Defaults to `urn:klnap:revalidation:payload`. */
-  source?: string
+  /** Stable absolute CloudEvents source URI for this producer. */
+  source: string
   /**
    * Upload collection for media-dependent hooks (optional).
    * Omitted → auto: only upload collection, or slug `media` among uploads.
@@ -65,24 +65,25 @@ export type PayloadRevalidationPluginConfig = {
 }
 
 const resolveDispatcher = (selection: DispatcherSelection): Dispatcher => {
-  if (!('default' in selection)) return selection
+  if ('dispatch' in selection && typeof selection.dispatch === 'function') return selection
+  if ('default' in selection) {
+    const { default: primary, fallback } = selection
+    if (!fallback) return primary
 
-  const { default: primary, fallback } = selection
-  if (!fallback) return primary
-
-  return {
-    maxEventItems: primary.maxEventItems,
-    async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
-      try {
-        const first = await primary.dispatch(input)
-        if (first.status === 'accepted') return first
-        if (first.status === 'unknown' || first.status === 'rejected') return first
-        return fallback.dispatch(input)
-      } catch {
-        return fallback.dispatch(input)
-      }
-    },
+    return {
+      async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
+        try {
+          const first = await primary.dispatch(input)
+          if (first.status === 'accepted') return first
+          if (first.status === 'unknown' || first.status === 'rejected') return first
+          return fallback.dispatch(input)
+        } catch {
+          return fallback.dispatch(input)
+        }
+      },
+    }
   }
+  throw new TypeError('revalidation: dispatcher must implement the Dispatcher contract')
 }
 
 const appendHook = <T>(existing: T[] | T | undefined, hook: T): T[] => {
@@ -174,34 +175,26 @@ const validateRevalidationExcludeFieldsOnConfig = (
 export function revalidation(config: PayloadRevalidationPluginConfig): Plugin {
   const enabled = config.enabled !== false
   const resolvedDispatcher = resolveDispatcher(config.dispatcher)
-  if (config.source) {
-    try {
-      new URL(config.source)
-    } catch {
-      throw new TypeError('revalidation: source must be an absolute URI')
-    }
+  try {
+    const source = new URL(config.source)
+    if (!source.protocol) throw new Error()
+  } catch {
+    throw new TypeError('revalidation: source must be an absolute URI')
   }
-  const dispatcher: Dispatcher = config.source
-    ? {
-        maxEventItems: resolvedDispatcher.maxEventItems,
-        dispatch: (input) =>
-          resolvedDispatcher.dispatch({
-            ...input,
-            events: input.events.map((event) => ({ ...event, source: config.source! })),
-          }),
-      }
-    : resolvedDispatcher
+  const dispatcher = resolvedDispatcher
   const pluginExcludeFields = config.excludeFields
   const pluginCollectionExcludeFields = buildPluginExcludeFieldsBySlug(config.collections)
   const pluginGlobalExcludeFields = buildPluginExcludeFieldsBySlug(config.globals)
   const { collection: mediaCollectionOverride, excludeFields: mediaPluginExcludeFields } =
     resolveMediaPluginConfig(config.media)
   const hookOptions: RevalidationHookOptions = {
+    source: config.source,
     pluginExcludeFields,
     pluginCollectionExcludeFields,
     pluginGlobalExcludeFields,
   }
   const mediaHookOptions = {
+    source: config.source,
     pluginExcludeFields,
     pluginCollectionExcludeFields,
     mediaPluginExcludeFields,
@@ -234,7 +227,7 @@ export function revalidation(config: PayloadRevalidationPluginConfig): Plugin {
       dispatcher,
       mediaHookOptions,
     )
-    const mediaBeforeDelete = createRevalidateMediaDependentsBeforeDelete(dispatcher)
+    const mediaBeforeDelete = createRevalidateMediaDependentsBeforeDelete(dispatcher, config.source)
 
     const collections = (incoming.collections ?? []).map((collection: CollectionConfig) => {
       if (mediaSlug && collection.slug === mediaSlug) {

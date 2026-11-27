@@ -1,8 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
 
-export const payloadSource = 'urn:klnap:revalidation:payload'
-export const payloadEventType = 'com.klnap.revalidation.resource.changed.v1'
+export const resourceChangedEventType = 'com.klnap.revalidation.resource.changed.v1'
 
 const resourceSchema = v.object({
   type: v.string(),
@@ -13,7 +12,7 @@ const resourceSchema = v.object({
   identifiers: v.optional(v.record(v.string(), v.string())),
 })
 
-export const payloadSchema = v.object({
+export const resourceChangedSchema = v.object({
   operation: v.picklist(['create', 'update', 'delete']),
   resource: resourceSchema,
   affected: v.array(
@@ -24,4 +23,4 @@ export const payloadSchema = v.object({
   ),
 }) satisfies StandardSchemaV1
 
-export type PayloadRevalidationData = v.InferOutput<typeof payloadSchema>
+export type ResourceChangedData = v.InferOutput<typeof resourceChangedSchema>

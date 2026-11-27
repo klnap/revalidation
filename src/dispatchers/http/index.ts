@@ -17,7 +17,12 @@ import {
   type DispatchOutcome,
   type TargetDispatchResult,
 } from '../../core/index.js'
-import { toTargetList, validateTarget, type TargetConfig } from '../../core/revalidation-target.js'
+import { toTargetList, validateTarget, type TargetConfig } from './targets.js'
+export type { RevalidationTarget, TargetConfig } from './targets.js'
+export type HttpDispatchInput = DispatchInput & { targets?: readonly string[] }
+export type HttpDispatcher = Omit<Dispatcher, 'dispatch'> & {
+  dispatch(input: HttpDispatchInput): Promise<DispatchOutcome>
+}
 
 const MAX_CONCURRENT_DELIVERIES = 4
 const MAX_RETRIES = 10
@@ -269,7 +274,7 @@ const runBounded = async <T, R>(
   return results
 }
 
-export const http = (config: HttpDispatcherConfig): Dispatcher => {
+export const http = (config: HttpDispatcherConfig): HttpDispatcher => {
   if (!Object.keys(config.targets).length) throw new Error('http dispatcher requires targets')
   for (const [name, target] of Object.entries(config.targets)) {
     validateTarget(name, target, config.allowInsecure)
@@ -307,8 +312,7 @@ export const http = (config: HttpDispatcherConfig): Dispatcher => {
   const allowInsecure = config.allowInsecure ?? false
 
   return {
-    maxEventItems,
-    async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
+    async dispatch(input: HttpDispatchInput): Promise<DispatchOutcome> {
       const allTargets = toTargetList(config.targets)
       const selectedNames = input.targets ?? allTargets.map(({ name }) => name)
       const unknown = selectedNames.filter((name) => !Object.hasOwn(config.targets, name))

@@ -15,17 +15,19 @@ type RevalidationLogger = {
  */
 export const postRevalidationChanges = async ({
   changes,
+  source,
   logger,
   dispatcher,
 }: {
   changes: RevalidationChange[]
+  source: string
   logger: RevalidationLogger
   dispatcher: Dispatcher
 }): Promise<void> => {
   if (!changes.length) return
 
   try {
-    const events = [changesToRevalidationEvent(changes)]
+    const events = [changesToRevalidationEvent(changes, source)]
     const outcome = await dispatcher.dispatch({ events })
     if (outcome.status !== 'accepted') {
       const errors = outcome.results.flatMap((result) => result.error?.message ?? [])

@@ -43,6 +43,7 @@ describe('deferRevalidationUntilCommit', () => {
     await dispatchRevalidationChanges({
       req,
       changes: [change, change],
+      source: 'https://cms.example/revalidation',
       dispatcher,
       logger: { error: () => {} },
     })
@@ -80,11 +81,53 @@ describe('deferRevalidationUntilCommit', () => {
           doc: { id: 'home' },
         },
       ],
+      source: 'https://cms.example/revalidation',
       dispatcher,
       logger: { error: () => {} },
     })
 
     deferral.discard()
     expect(dispatcher.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps deferred changes from distinct producer sources independent', async () => {
+    const req: { context: Record<string, unknown> } = { context: {} }
+    const dispatcher = {
+      dispatch: mock(async (_input: DispatchInput) => ({
+        status: 'accepted' as const,
+        results: [],
+      })),
+    }
+    const change: RevalidationChange = {
+      type: 'collection',
+      slug: 'projects',
+      operation: 'update',
+      locale: 'en',
+      doc: { id: '1', slug: 'tower' },
+    }
+    const deferral = deferRevalidationUntilCommit(req)
+    const logger = { error: () => {} }
+
+    await dispatchRevalidationChanges({
+      req,
+      changes: [change],
+      source: 'https://cms-one.example/revalidation',
+      dispatcher,
+      logger,
+    })
+    await dispatchRevalidationChanges({
+      req,
+      changes: [change],
+      source: 'https://cms-two.example/revalidation',
+      dispatcher,
+      logger,
+    })
+    await deferral.flush()
+
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatcher.dispatch.mock.calls.map(([input]) => input.events[0]?.source)).toEqual([
+      'https://cms-one.example/revalidation',
+      'https://cms-two.example/revalidation',
+    ])
   })
 })

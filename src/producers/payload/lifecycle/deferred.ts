@@ -19,6 +19,7 @@ type RevalidationLogger = {
 
 type DeferredChanges = {
   changes: RevalidationChange[]
+  source: string
   logger: RevalidationLogger
   dispatcher: Dispatcher
 }
@@ -55,18 +56,23 @@ export const deferRevalidationUntilCommit = (req: DeferredRequest): Revalidation
     flush: async () => {
       release()
       const pending = queue.splice(0)
-      const byDispatcher = new Map<Dispatcher, DeferredChanges[]>()
+      const byDispatcher = new Map<Dispatcher, Map<string, DeferredChanges[]>>()
       for (const entry of pending) {
-        byDispatcher.set(entry.dispatcher, [...(byDispatcher.get(entry.dispatcher) ?? []), entry])
+        const bySource = byDispatcher.get(entry.dispatcher) ?? new Map()
+        bySource.set(entry.source, [...(bySource.get(entry.source) ?? []), entry])
+        byDispatcher.set(entry.dispatcher, bySource)
       }
-      for (const entries of byDispatcher.values()) {
-        const [first] = entries
-        if (!first) continue
-        await postRevalidationChanges({
-          changes: entries.flatMap((entry) => entry.changes),
-          dispatcher: first.dispatcher,
-          logger: first.logger,
-        })
+      for (const bySource of byDispatcher.values()) {
+        for (const entries of bySource.values()) {
+          const [first] = entries
+          if (!first) continue
+          await postRevalidationChanges({
+            changes: entries.flatMap((entry) => entry.changes),
+            source: first.source,
+            dispatcher: first.dispatcher,
+            logger: first.logger,
+          })
+        }
       }
     },
     discard: () => {
@@ -84,11 +90,13 @@ export const deferRevalidationUntilCommit = (req: DeferredRequest): Revalidation
 export const dispatchRevalidationChanges = async ({
   req,
   changes,
+  source,
   logger,
   dispatcher,
 }: {
   req: DeferredRequest
   changes: RevalidationChange[]
+  source: string
   logger: RevalidationLogger
   dispatcher: Dispatcher
 }): Promise<void> => {
@@ -98,7 +106,7 @@ export const dispatchRevalidationChanges = async ({
     const seen = seenByQueue.get(queue) ?? new Set<string>()
     seenByQueue.set(queue, seen)
     fresh = changes.filter((change) => {
-      const key = changeKey(change)
+      const key = `${source}\u0000${changeKey(change)}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -107,15 +115,16 @@ export const dispatchRevalidationChanges = async ({
   if (fresh.length === 0) return
 
   if (queue) {
-    queue.push({ changes: fresh, logger, dispatcher })
+    queue.push({ changes: fresh, source, logger, dispatcher })
     return
   }
-  scheduleBestEffortDispatch({ changes: fresh, dispatcher, logger })
+  scheduleBestEffortDispatch({ changes: fresh, source, dispatcher, logger })
 }
 
 /** Best-effort dispatch after the hook returns. There is no durable retry or recovery. */
 const scheduleBestEffortDispatch = (args: {
   changes: RevalidationChange[]
+  source: string
   dispatcher: Dispatcher
   logger: RevalidationLogger
 }): void => {

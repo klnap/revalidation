@@ -18,6 +18,7 @@ import {
 } from './resolve-media-dependents.js'
 
 type MediaOptions = {
+  source: string
   pluginExcludeFields?: readonly string[]
   pluginCollectionExcludeFields?: Readonly<Record<string, readonly string[]>>
   mediaPluginExcludeFields?: readonly string[]
@@ -111,13 +112,14 @@ const updateAfterChange = async (
       ...changes,
     ],
     logger: req.payload.logger,
+    source: options.source,
     dispatcher,
   })
 }
 
 export const createRevalidateMediaDependentsAfterChange = (
   dispatcher: Dispatcher,
-  options: MediaOptions = {},
+  options: MediaOptions,
 ): CollectionAfterChangeHook => {
   return async (args) => {
     try {
@@ -131,6 +133,7 @@ export const createRevalidateMediaDependentsAfterChange = (
 
 export const createRevalidateMediaDependentsBeforeDelete = (
   dispatcher: Dispatcher,
+  source: string,
 ): CollectionBeforeDeleteHook => {
   return async ({ id, req, collection }) => {
     const subject = mediaSubject(id)
@@ -170,6 +173,7 @@ export const createRevalidateMediaDependentsBeforeDelete = (
           ...changes,
         ],
         logger: req.payload.logger,
+        source,
         dispatcher,
       })
     } catch (error) {

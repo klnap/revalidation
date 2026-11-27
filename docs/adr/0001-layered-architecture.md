@@ -14,15 +14,14 @@ Organize `src/` as ports/adapters:
 
 | Layer | Role | May import from `src` | Forbidden npm (runtime) |
 | :--- | :--- | :--- | :--- |
-| `core` | Types and pipeline | `core` only | `payload`, `next` |
+| `core` | Protocol contracts, event validation and neutral utilities | `core` only | `payload`, `next` |
 | `producers/payload` | Payload plugin, lifecycle hooks, media dependents | `core`, `producers/payload` | `next` |
-| `dispatchers/http` | HTTP delivery with dispatcher-bound targets | `core` | `payload`, `next` |
-| `consumers/next` | Next route handler + cache inspect | `core`, `sources/payload` (wire schema only) | `payload` |
+| `dispatchers/http` | HTTP delivery with dispatcher-bound targets | `core`, `dispatchers/http` | `payload`, `next` |
+| `consumers/next` | Next Route Handler and cache operations | `core`, `consumers/next` | `payload` |
 
 Additional rules:
 
 - Producers, dispatchers, and consumers never import each other.
-- Sibling dispatchers never import each other; shared code lives in `routing/` or `core/`.
 - Under `producers/payload`, `lifecycle/` may import `media/`. `media/` may import `lifecycle/helpers.ts` (the barrel), `exclude-fields.ts` and `revalidation-custom.ts`; it must not import other `lifecycle/` files. Enforced by `check:boundaries`.
 
 Enforcement: `bun run check:boundaries` (`dependency-cruiser.config.mjs`).
@@ -38,6 +37,6 @@ Enforcement: `bun run check:boundaries` (`dependency-cruiser.config.mjs`).
 
 ## Consequences
 
-- Producers never import dispatchers; the dispatcher is passed to `revalidation({ dispatcher })`.
+- Producers receive the framework-independent dispatcher contract and do not construct transports.
 - HTTP targets are captured by each dispatcher instance; no process-wide target state exists.
 - Hosts import only documented `package.json` export subpaths.

@@ -503,7 +503,10 @@ describe('media dependency resolution failures', () => {
       dispatch: mock(() => Promise.resolve({ status: 'accepted' as const, results: [] })),
     }
 
-    await createRevalidateMediaDependentsBeforeDelete(dispatcher as never)({
+    await createRevalidateMediaDependentsBeforeDelete(
+      dispatcher as never,
+      'https://cms.example/revalidation',
+    )({
       id: 5,
       context: {},
       req: req as never,
@@ -524,9 +527,12 @@ describe('media dependency resolution failures', () => {
       Promise.reject(new Error('dependency query failed')),
     )
 
-    await createRevalidateMediaDependentsBeforeDelete({
-      dispatch: mock(() => Promise.resolve({ status: 'accepted' as const, results: [] })),
-    } as never)({
+    await createRevalidateMediaDependentsBeforeDelete(
+      {
+        dispatch: mock(() => Promise.resolve({ status: 'accepted' as const, results: [] })),
+      } as never,
+      'https://cms.example/revalidation',
+    )({
       id: 5,
       context: {},
       req: req as never,

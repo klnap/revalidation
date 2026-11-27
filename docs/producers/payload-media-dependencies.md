@@ -5,7 +5,10 @@ A media file is often shared by many documents: a hero image on several pages, o
 With media tracking, a change to a media document revalidates every supported document that the producer resolves. Nothing needs to be republished.
 
 ```ts
+import { http } from '@klnap/revalidation/dispatchers/http'
+
 revalidation({
+  source: 'https://cms.example/payload',
   dispatcher: http({
     targets: {
       website: {
@@ -20,7 +23,10 @@ revalidation({
 No option is needed when the upload collection is the only upload collection or is named `media`. Otherwise, pass it explicitly:
 
 ```ts
+import { http } from '@klnap/revalidation/dispatchers/http'
+
 revalidation({
+  source: 'https://cms.example/payload',
   dispatcher: http({ targets: { website: target } }),
   media: mediaCollection, // the CollectionConfig of the upload collection
   // or: media: { collection: mediaCollection, excludeFields: ['updatedAt'] }

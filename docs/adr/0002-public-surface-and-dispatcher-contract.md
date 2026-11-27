@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by ADRs 0003–0005 and the 0.4.0 specification.
+Superseded by ADRs 0003–0005 and the current candidate specification.
 
 ## Public subpaths
 
@@ -10,8 +10,7 @@ Defined in `package.json` `exports` (do not deep-import `src/`):
 
 | Subpath | Purpose |
 | :--- | :--- |
-| `@klnap/revalidation` | CloudEvents, selectors, schemas, errors, and dispatch outcome helpers |
-| `@klnap/revalidation/sources/payload` | Payload CloudEvents source URI and Standard Schema |
+| `@klnap/revalidation` | CloudEvents, the framework-independent resource-change contract, selectors, errors, and dispatcher types |
 | `@klnap/revalidation/producers/payload` | `revalidation()` Payload plugin |
 | `@klnap/revalidation/consumers/next` | `defineRevalidation` |
 | `@klnap/revalidation/dispatchers` | Barrel (prefer transport subpaths for tree shaking) |
@@ -24,7 +23,7 @@ Exports point to compiled `dist/` entry points. Run `bun run build` before packi
 ## Dispatcher contract
 
 The historical export and dispatcher contract was replaced by the CloudEvents contract in ADRs
-0003–0005. See the 0.4.0 specification and package manifest for the current surface.
+0003–0005. See `docs/specification/vnext.md` and the package manifest for the current surface.
 
 ## Peer dependencies
 
