@@ -11,7 +11,7 @@ const dispatcher = http({
     website: {
       url: process.env.REVALIDATION_URL!,
       secret: process.env.REVALIDATION_SECRET!,
-      filter: { source: 'urn:klnap:revalidation:payload' },
+      filter: { source: 'https://cms.example/payload' },
     },
     preview: {
       url: process.env.PREVIEW_REVALIDATION_URL!,
@@ -47,7 +47,9 @@ and signature.
 
 `retries` counts extra attempts. Backoff uses a random delay up to twice the previous bound.
 `deadlineMs` bounds all targets, chunks, and retries in one dispatch. Deliveries run with bounded
-concurrency.
+concurrency. The default `timeoutMs` is 15 seconds per attempt, while the total dispatch deadline
+defaults to 5 seconds. The shorter total deadline can abort an attempt before its per-attempt timeout;
+these are nested bounds, not independent time guarantees.
 
 `maxEventItems` bounds events per request. `maxBodyBytes` bounds encoded request bytes. The
 dispatcher splits batches to satisfy both limits and reports an individually oversized event as a

@@ -2,9 +2,12 @@ import { describe, expect, it } from 'bun:test'
 import type { Config } from 'payload'
 
 import type { DispatchOutcome } from '../../core'
+import { http } from '../../dispatchers/http/index.js'
 
 import { revalidation } from './plugin.ts'
 import { readRevalidationCustom } from './revalidation-custom.ts'
+
+const source = 'https://cms.example/revalidation'
 
 describe('readRevalidationCustom', () => {
   it('reads true', () => {
@@ -27,8 +30,47 @@ describe('readRevalidationCustom', () => {
 })
 
 describe('revalidation plugin', () => {
+  it('accepts an explicitly constructed dispatcher without depending on HTTP', () => {
+    const plugin = revalidation({
+      source,
+      dispatcher: http({
+        targets: {
+          website: {
+            url: 'https://example.test/revalidate',
+            secret: `whsec_${Buffer.from('producer-test-secret').toString('base64')}`,
+          },
+        },
+      }),
+    })
+
+    expect(plugin({ collections: [] } as unknown as Config)).toBeDefined()
+    expect(() =>
+      http({
+        targets: {
+          website: {
+            url: 'not a URL',
+            secret: `whsec_${Buffer.from('producer-test-secret').toString('base64')}`,
+          },
+        },
+      }),
+    ).toThrow()
+    expect(() =>
+      revalidation({
+        source,
+        dispatcher: { targets: {} } as never,
+      }),
+    ).toThrow('dispatcher must implement the Dispatcher contract')
+    expect(() =>
+      revalidation({
+        source: 'not-an-absolute-uri',
+        dispatcher: { dispatch: async () => ({ status: 'accepted' as const, results: [] }) },
+      }),
+    ).toThrow('source must be an absolute URI')
+  })
+
   it('wires hooks from custom.revalidation only', () => {
     const plugin = revalidation({
+      source,
       dispatcher: {
         default: {
           dispatch: async () => ({ status: 'accepted' as const, results: [] }),
@@ -57,6 +99,7 @@ describe('revalidation plugin', () => {
   it('preserves host collections and endpoints without adding queue infrastructure', () => {
     const endpoint = { path: '/host-endpoint', method: 'get' } as never
     const plugin = revalidation({
+      source,
       dispatcher: { dispatch: async () => ({ status: 'accepted' as const, results: [] }) },
     })
     const config = plugin({
@@ -71,6 +114,7 @@ describe('revalidation plugin', () => {
 
   it('rejects applying the plugin twice instead of duplicating revalidation hooks', () => {
     const plugin = revalidation({
+      source,
       dispatcher: {
         dispatch: async () => ({ status: 'accepted' as const, results: [] }),
       },
@@ -102,6 +146,7 @@ describe('revalidation plugin', () => {
       },
     }
     const plugin = revalidation({
+      source,
       dispatcher: { default: primary, fallback },
     })
 
@@ -118,6 +163,7 @@ describe('revalidation plugin', () => {
           doc: { id: '1', slug: 'a' },
         },
       ],
+      source,
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       dispatcher: {
         async dispatch(input) {
@@ -147,6 +193,7 @@ describe('revalidation plugin', () => {
       },
     }
     const plugin = revalidation({
+      source,
       dispatcher: { default: primary, fallback },
     })
 
@@ -163,6 +210,7 @@ describe('revalidation plugin', () => {
           doc: { id: '1' },
         },
       ],
+      source,
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       dispatcher: {
         async dispatch(input) {

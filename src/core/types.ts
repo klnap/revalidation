@@ -1,40 +1,5 @@
 import type { CloudEvent } from './cloudevents.js'
 
-export type CacheMode = 'stale' | 'expire'
-
-export type CacheEntry = {
-  value: string
-  mode: CacheMode
-}
-
-export type CacheResolverOutput =
-  | string
-  | CacheEntry
-  | readonly (string | CacheEntry)[]
-  | null
-  | undefined
-
-export type CacheResolver<TData = unknown> = (data: TData) => CacheResolverOutput
-
-export type LayerRule = {
-  tags?: readonly string[]
-  paths?: readonly string[]
-}
-
-export type LayerOperations = {
-  tags: CacheEntry[]
-  paths: CacheEntry[]
-}
-
-export type LayerInspectResult = Record<string, LayerOperations>
-
-export type InspectResult = {
-  source: string
-  items: unknown[]
-  cacheKeys: string[]
-  layers: LayerInspectResult
-}
-
 export type DispatchError = {
   code: string
   message: string
@@ -60,16 +25,10 @@ export type DispatchOutcome =
 
 export type DispatchInput = {
   events: readonly CloudEvent[]
-  /** Manual override; this narrows configured targets and never bypasses target filters. */
-  targets?: readonly string[]
 }
 
 export type Dispatcher = {
   dispatch(input: DispatchInput): Promise<DispatchOutcome>
-  /**
-   * Most CloudEvents sent in one target request. Omitted means the default (100).
-   */
-  maxEventItems?: number
 }
 
 export type Logger = {

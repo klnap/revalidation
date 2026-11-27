@@ -6,6 +6,7 @@ import { revalidation } from '../../src/producers/payload/plugin.js'
 import { createTestPayload, type TestPayloadHandle } from './helpers/test-payload.js'
 
 const dispatches: DispatchInput[] = []
+const source = 'https://cms.example/revalidation'
 let nextOutcome: DispatchOutcome = { status: 'accepted', results: [] }
 let handle!: TestPayloadHandle
 
@@ -20,7 +21,7 @@ const findItems = (start: number) =>
   dispatches
     .slice(start)
     .flatMap((dispatch) => dispatch.events)
-    .filter((event) => event.source === 'urn:klnap:revalidation:payload')
+    .filter((event) => event.source === source)
     .flatMap((event) => {
       const data = event.data as {
         affected?: Array<{ operation: string; resource: Record<string, unknown> }>
@@ -53,7 +54,7 @@ describe('Payload revalidation (SQLite integration)', () => {
         { name: 'slug', type: 'text', required: true },
       ],
     }
-    handle = await createTestPayload([collection], [revalidation({ dispatcher })])
+    handle = await createTestPayload([collection], [revalidation({ source, dispatcher })])
   })
 
   afterAll(async () => {

@@ -67,7 +67,7 @@ jobs:
           const tarball = process.env.TARBALL;
           const files = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).trim().split("\n");
           const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
-          const expectedExports = [".", "./sources/payload", "./producers/payload", "./consumers/next", "./dispatchers", "./dispatchers/http"];
+          const expectedExports = [".", "./producers/payload", "./consumers/next", "./dispatchers", "./dispatchers/http"];
           if (JSON.stringify(Object.keys(manifest.exports ?? {}).sort()) !== JSON.stringify(expectedExports.sort())) throw new Error("Unexpected package exports.");
           const publicDeclarations = [];
           for (const [subpath, targets] of Object.entries(manifest.exports)) {
@@ -87,7 +87,7 @@ jobs:
             if (obsolete.test(declaration)) throw new Error(`Obsolete API in ${file}.`);
           }
           const readme = execFileSync("tar", ["-xOf", tarball, "package/README.md"], { encoding: "utf8" });
-          if (!readme.includes("Declarative, type-safe cache revalidation across independent producers and consumers.")) throw new Error("README description is incorrect.");
+          if (!readme.includes("Declarative, type-safe cache invalidation across applications, with a framework-independent event")) throw new Error("README description is incorrect.");
           console.log(`Validated ${files.length} files and ${publicDeclarations.length} public declarations.`);
           NODE
 

@@ -1,41 +1,47 @@
-# Cache tags and paths
+# Cache templates and rule semantics
 
-`defineRevalidation()` creates typed tag and path helpers from templates. Use those helpers in
-cached functions and in rule callbacks so both sides build the same cache key.
+`defineRevalidation()` creates typed tag and path builders. The same builders work as callables in
+cached application code and as references in declarative resource mappings:
 
 ```ts
-import { defineRevalidation } from '@klnap/revalidation/consumers/next'
-
-export const { tags, paths, POST } = defineRevalidation({
-  secret: process.env.REVALIDATION_SECRET!,
-  sources: { [payloadSource]: payloadSchema },
-  tags: { project: '[locale]:project:[slug]', settings: 'settings' },
-  paths: { project: '/[locale]/work/[slug]', sitemap: '/sitemap.xml' },
-  rules: ({ tags, paths, on }) => [
-    on({ source: payloadSource }, ({ affected }) => ({
-      tags: affected.flatMap(({ resource }) =>
-        resource.locale && resource.slug
-          ? [tags.project({ locale: resource.locale, slug: resource.slug })]
-          : [],
-      ),
-      paths: affected.flatMap(({ resource }) =>
-        resource.locale && resource.slug
-          ? [paths.project({ locale: resource.locale, slug: resource.slug })]
-          : [],
-      ),
-    })),
-  ],
+const { tags, paths, POST } = defineRevalidation({
+  secret,
+  tags: {
+    pages: '[locale]:pages',
+    page: '[locale]:page:[slug]',
+  },
+  paths: {
+    page: '/[locale]/[slug]',
+  },
+  rules: ({ tags, paths }) => ({
+    'payload.collection.pages': {
+      tags: [tags.pages, tags.page],
+      paths: [paths.page],
+    },
+  }),
 })
 ```
 
-Each bracketed name becomes a required string argument. Static templates such as `settings` and
-`/sitemap.xml` produce no-argument helpers.
+Calling `tags.page({ locale: 'pl', slug: 'about' })` renders `pl:page:about`; calling
+`paths.page({ locale: 'pl', slug: 'about' })` renders `/pl/about`. Every bracketed parameter is
+required by the TypeScript helper. Static templates need no arguments.
 
-TypeScript checks declared helper names and required parameters. It cannot prove that events contain
-the values needed by a template or prevent collisions between different parameter combinations.
-Missing or empty parameters throw when helpers are called. Rule callbacks should omit affected
-resources that lack required values.
+For each matching affected resource, the consumer resolves placeholders from `locale`, `slug`,
+`id`, and configured `identifiers`. Payload emits previous and current resources when a route
+identifier changes. The consumer expands both through the same mapping and deduplicates identical
+operations. Missing parameters are reported as incomplete invalidation; no malformed template
+result is executed.
 
-Tag results default to the configured mode (`expire` by default); rule- and result-level modes can
-override it. Paths call Next.js `revalidatePath` without a tag profile. See the
-[Next.js consumer guide](../consumers/next.md).
+Tag parameters are limited to 256 characters. Path parameters are also checked for URL-segment
+safety: path separators, control characters, malformed percent escapes, dot segments, and
+query/fragment delimiters are rejected. These checks apply to untrusted event data as well as
+application calls.
+
+Use grouped mappings when multiple resources share one policy. Use `on()` with structured
+selectors and resolver callbacks only when conditions or application-specific logic require them.
+Both forms compile to the same internal rule and execution pipeline.
+
+Tag profiles use Next.js-native values. They inherit from the individual tag tuple, the rule, then
+the consumer configuration; tags default to `{ expire: 0 }`. Conflicting profiles for one tag reject
+the request before side effects. Path tuples can select a `page` or `layout` scope for literal
+dynamic route patterns. See the [Next.js consumer guide](../consumers/next.md).

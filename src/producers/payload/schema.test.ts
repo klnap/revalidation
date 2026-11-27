@@ -1,37 +1,42 @@
 import { describe, expect, it } from 'bun:test'
 import { changesToRevalidationEvent } from './schema.ts'
 
+const source = 'https://cms.example/revalidation'
+
 describe('changesToRevalidationEvent', () => {
   it('keeps the trigger separate from all current, previous, and dependent identities', () => {
-    const event = changesToRevalidationEvent([
-      {
-        type: 'collection',
-        slug: 'projects',
-        operation: 'update',
-        locale: 'en',
-        doc: { id: '1', slug: 'doc-slug' },
-        routeSlug: 'routing-slug',
-      },
-      {
-        type: 'collection',
-        slug: 'projects',
-        operation: 'update',
-        locale: 'en',
-        doc: { id: '1', slug: 'old-slug' },
-        identifiers: { slug: 'old-slug' },
-      },
-      {
-        type: 'global',
-        slug: 'settings',
-        operation: 'update',
-        locale: 'en',
-        doc: {},
-      },
-    ])
+    const event = changesToRevalidationEvent(
+      [
+        {
+          type: 'collection',
+          slug: 'projects',
+          operation: 'update',
+          locale: 'en',
+          doc: { id: '1', slug: 'doc-slug' },
+          routeSlug: 'routing-slug',
+        },
+        {
+          type: 'collection',
+          slug: 'projects',
+          operation: 'update',
+          locale: 'en',
+          doc: { id: '1', slug: 'old-slug' },
+          identifiers: { slug: 'old-slug' },
+        },
+        {
+          type: 'global',
+          slug: 'settings',
+          operation: 'update',
+          locale: 'en',
+          doc: {},
+        },
+      ],
+      source,
+    )
 
     expect(event).toMatchObject({
       specversion: '1.0',
-      source: 'urn:klnap:revalidation:payload',
+      source,
       type: 'com.klnap.revalidation.resource.changed.v1',
       datacontenttype: 'application/json',
       data: {
@@ -58,6 +63,6 @@ describe('changesToRevalidationEvent', () => {
   })
 
   it('rejects an empty change set', () => {
-    expect(() => changesToRevalidationEvent([])).toThrow()
+    expect(() => changesToRevalidationEvent([], source)).toThrow()
   })
 })

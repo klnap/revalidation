@@ -37,16 +37,148 @@ cat > minimal-smoke.mjs <<'JS'
 import assert from 'node:assert/strict'
 import * as core from '@klnap/revalidation'
 import { http } from '@klnap/revalidation/dispatchers/http'
-import { payloadSchema } from '@klnap/revalidation/sources/payload'
 
 assert.equal(typeof core, 'object')
 assert.equal(typeof http, 'function')
-assert.equal(typeof payloadSchema['~standard'].validate, 'function')
+assert.equal(typeof core.resourceChangedSchema['~standard'].validate, 'function')
+assert.equal(core.resourceChangedEventType, 'com.klnap.revalidation.resource.changed.v1')
 assert.equal(await import('next/cache.js').then(() => true, () => false), false)
 assert.equal(await import('payload').then(() => true, () => false), false)
 console.log('optional peer isolation OK')
 JS
 node minimal-smoke.mjs
+cat > consumer.mts <<'TS'
+import type { CloudEvent, Dispatcher } from '@klnap/revalidation'
+import { http } from '@klnap/revalidation/dispatchers/http'
+
+const event: CloudEvent = {
+  specversion: '1.0',
+  id: 'minimal',
+  source: 'https://example.test',
+  type: 'com.example.changed.v1',
+  data: {},
+}
+const dispatcher: Dispatcher = http({
+  targets: { website: { url: 'https://example.test/revalidate', secret: 'whsec_c2VjcmV0' } },
+})
+void event
+void dispatcher
+TS
+cat > consumer-tsconfig.json <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["consumer.mts"]
+}
+JSON
+"$repo_root/node_modules/.bin/tsc" --project consumer-tsconfig.json
+mkdir -p "$work/payload-only"
+cd "$work/payload-only"
+cat > package.json <<'JSON'
+{ "name": "consumer-smoke-payload-only", "private": true, "type": "module" }
+JSON
+npm install --no-audit --no-fund "$tarball" "payload@$payload_version" >/dev/null
+cat > payload-only.mts <<'TS'
+import type { Dispatcher } from '@klnap/revalidation'
+import { revalidation } from '@klnap/revalidation/producers/payload'
+import { http } from '@klnap/revalidation/dispatchers/http'
+import type { Plugin } from 'payload'
+
+const dispatcher: Dispatcher = http({
+  targets: { website: { url: 'https://example.test/revalidate', secret: 'whsec_c2VjcmV0' } },
+})
+const plugin: Plugin = revalidation({ source: 'https://cms.example/events', dispatcher })
+void plugin
+TS
+cat > payload-only.mjs <<'JS'
+import assert from 'node:assert/strict'
+import { revalidation } from '@klnap/revalidation/producers/payload'
+import { http } from '@klnap/revalidation/dispatchers/http'
+
+const plugin = revalidation({
+  source: 'https://cms.example/events',
+  dispatcher: http({
+    targets: { website: { url: 'https://example.test/revalidate', secret: 'whsec_c2VjcmV0' } },
+  }),
+})
+assert.equal(typeof plugin, 'function')
+assert.equal(await import('next/cache.js').then(() => true, () => false), false)
+console.log('Payload-only isolation OK')
+JS
+cat > payload-only-tsconfig.json <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["payload-only.mts"]
+}
+JSON
+"$repo_root/node_modules/.bin/tsc" --project payload-only-tsconfig.json
+node payload-only.mjs
+mkdir -p "$work/next-only"
+cd "$work/next-only"
+cat > package.json <<'JSON'
+{ "name": "consumer-smoke-next-only", "private": true, "type": "module" }
+JSON
+npm install --no-audit --no-fund \
+  "$tarball" "next@$next_version" react@19.3.1 react-dom@19.3.1 >/dev/null
+cat > next-only.mts <<'TS'
+import { defineRevalidation, type CacheProfile } from '@klnap/revalidation/consumers/next'
+import type { NextConfig } from 'next'
+
+const cacheProfile: CacheProfile = { expire: 0 }
+const nextConfig: NextConfig = { cacheComponents: true }
+const handler = defineRevalidation({
+  secret: 'whsec_c2VjcmV0',
+  tags: { pages: 'pages' },
+  rules: ({ tags }) => ({ 'payload.collection.pages': [tags.pages] }),
+})
+void cacheProfile
+void nextConfig
+void handler.POST
+TS
+cat > next-only.mjs <<'JS'
+import assert from 'node:assert/strict'
+import { defineRevalidation } from '@klnap/revalidation/consumers/next'
+
+const handler = defineRevalidation({
+  secret: 'whsec_c2VjcmV0',
+  tags: { pages: 'pages' },
+  rules: ({ tags }) => ({ 'payload.collection.pages': [tags.pages] }),
+})
+assert.equal(typeof handler.POST, 'function')
+assert.equal(await import('payload').then(() => true, () => false), false)
+console.log('Next-only isolation OK')
+JS
+cat > next-only-tsconfig.json <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["next-only.mts"]
+}
+JSON
+"$repo_root/node_modules/.bin/tsc" --project next-only-tsconfig.json
+node next-only.mjs
 cd "$work"
 cat > package.json <<'JSON'
 { "name": "consumer-smoke", "private": true, "type": "module" }
@@ -60,8 +192,8 @@ cat > "$work/consumer-tsconfig.json" <<'JSON'
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -77,35 +209,26 @@ import assert from 'node:assert/strict'
 import { defineRevalidation } from '@klnap/revalidation/consumers/next'
 import { http } from '@klnap/revalidation/dispatchers/http'
 import { revalidation } from '@klnap/revalidation/producers/payload'
-import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
+import { resourceChangedEventType, resourceChangedSchema } from '@klnap/revalidation'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { buildConfig, getPayload } from 'payload'
 
 assert.equal(typeof defineRevalidation, 'function')
 assert.equal(typeof http, 'function')
-assert.equal(typeof payloadSchema['~standard'].validate, 'function')
-assert.equal(payloadSource, 'urn:klnap:revalidation:payload')
+assert.equal(typeof resourceChangedSchema['~standard'].validate, 'function')
+assert.equal(resourceChangedEventType, 'com.klnap.revalidation.resource.changed.v1')
 
 const secret = `whsec_${Buffer.from('smoke-secret').toString('base64')}`
 const { tags, POST } = defineRevalidation({
   secret,
-  sources: { [payloadSource]: payloadSchema },
   tags: { page: '[locale]:page:[slug]' },
   paths: { page: '/[locale]/[slug]' },
-  rules: ({ tags, paths, on }) => [
-    on({ source: payloadSource }, ({ affected }) => ({
-      tags: affected.flatMap(({ resource }) =>
-        resource.locale && resource.slug
-          ? [tags.page({ locale: resource.locale, slug: resource.slug })]
-          : [],
-      ),
-      paths: affected.flatMap(({ resource }) =>
-        resource.locale && resource.slug
-          ? [paths.page({ locale: resource.locale, slug: resource.slug })]
-          : [],
-      ),
-    })),
-  ],
+  rules: ({ tags, paths }) => ({
+    'payload.collection.articles': {
+      tags: [tags.page],
+      paths: [paths.page],
+    },
+  }),
 })
 assert.equal(typeof POST, 'function')
 assert.equal(tags.page({ locale: 'en', slug: 'about' }), 'en:page:about')
@@ -120,7 +243,7 @@ const dispatcher = {
 }
 const config = await buildConfig({
   secret: 's',
-  plugins: [revalidation({ dispatcher })],
+  plugins: [revalidation({ source: 'https://cms.example/revalidation', dispatcher })],
   db: sqliteAdapter({
     client: { url: `file:${process.cwd()}/smoke.db` },
     push: true,

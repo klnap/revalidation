@@ -10,7 +10,7 @@ import { defineRevalidation } from '../../src/consumers/next/define-revalidation
 import { http } from '../../src/dispatchers/http/index.js'
 import { revalidationOrderableHooks } from '../../src/producers/payload/lifecycle/orderable-hooks.js'
 import { revalidation } from '../../src/producers/payload/plugin.js'
-import { payloadEventType, payloadSchema, payloadSource } from '../../src/sources/payload/index.js'
+import { resourceChangedEventType } from '../../src/core/resource-changed-schema.js'
 
 const orderableDir = resolve(
   process.env.PAYLOAD_ORDERABLE_PACKAGE_DIR ??
@@ -20,6 +20,7 @@ const databaseUrl = process.env.PAYLOAD_ORDERABLE_PKG_TEST_DATABASE_URL
 const enabled =
   Boolean(databaseUrl) && existsSync(join(orderableDir, 'tests/integration/fixtures.ts'))
 const integration = enabled ? describe : describe.skip
+const source = 'https://cms.example/revalidation'
 const secret = `whsec_${Buffer.from('orderable-e2e-test-secret').toString('base64')}`
 const user = {
   id: 'revalidation-orderable-test-user',
@@ -304,7 +305,6 @@ integration('real Payload orderable → revalidation HTTP integration (PostgreSQ
     })
     consumerPost = defineRevalidation({
       secret,
-      sources: { [payloadSource]: payloadSchema },
       rules: () => [],
     }).POST
 
@@ -364,7 +364,7 @@ integration('real Payload orderable → revalidation HTTP integration (PostgreSQ
           hooks: instrumentedHooks,
           collections: { catalog: { orderScope: 'locale' } },
         }),
-        revalidation({ dispatcher }),
+        revalidation({ source, dispatcher }),
       ],
       admin: { disable: true },
       typescript: { autoGenerate: false },
@@ -426,8 +426,8 @@ integration('real Payload orderable → revalidation HTTP integration (PostgreSQ
       resource: Record<string, unknown>
       affected: { operation: string; resource: Record<string, unknown> }[]
     }
-    expect(globalEvent.source).toBe(payloadSource)
-    expect(globalEvent.type).toBe(payloadEventType)
+    expect(globalEvent.source).toBe(source)
+    expect(globalEvent.type).toBe(resourceChangedEventType)
     expect(globalEvent.specversion).toBe('1.0')
     expect(typeof globalEvent.id).toBe('string')
     expect(globalData.operation).toBe('update')

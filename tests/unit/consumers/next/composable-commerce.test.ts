@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Webhook } from 'standardwebhooks'
 import * as v from 'valibot'
-import { payloadSchema, payloadSource } from '../../../../src/sources/payload/index.js'
+import { resourceChangedEventType } from '../../../../src/core/resource-changed-schema.js'
 
 const executionOrder: string[] = []
 const revalidateTag = mock((tag: string) => {
@@ -13,6 +13,7 @@ const { defineRevalidation } = await import('../../../../src/consumers/next/inde
 
 const secret = `whsec_${Buffer.from('commerce-test-secret').toString('base64')}`
 const medusaSource = 'https://commerce.example/events'
+const payloadSource = 'https://cms.example/revalidation'
 const operationSchema = v.picklist(['create', 'update', 'delete'])
 const medusaSchema = v.object({
   operation: operationSchema,
@@ -89,15 +90,12 @@ describe('composable commerce projection', () => {
   const makeConsumer = () =>
     defineRevalidation({
       secret,
-      sources: {
-        [payloadSource]: payloadSchema,
-        [medusaSource]: medusaSchema,
-      },
+      schemas: { 'com.example.medusa.product.updated.v1': medusaSchema },
       tags: { product: '[locale]:product:[slug]' },
       rules: ({ tags, on }) => [
         on(
           {
-            source: payloadSource,
+            type: resourceChangedEventType,
             affected: { type: 'payload.collection', name: 'products' },
           },
           ({ affected }) => ({
@@ -123,7 +121,7 @@ describe('composable commerce projection', () => {
         ),
         on(
           {
-            source: medusaSource,
+            type: 'com.example.medusa.product.updated.v1',
             affected: { type: 'medusa.product' },
           },
           ({ data, affected }) => ({

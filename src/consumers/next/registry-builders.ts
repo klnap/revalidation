@@ -14,13 +14,19 @@ import {
   type TagParamsBag,
   type TagTemplate,
 } from './host-types.js'
+import { assertPathValue, assertTagValue } from './param-values.js'
 
 const tagParamError = (tagId: string, keys: readonly string[], params: TagParamsBag): string => {
   const missing = keys.filter((k) => !params[k])
   return `Tag "${tagId}" missing param(s): ${missing.join(', ')}`
 }
 
-const builderFromTemplate = (tagId: string, template: string, fitTag = false): TagBuilder => {
+const builderFromTemplate = (
+  tagId: string,
+  template: string,
+  fitTag = false,
+  validatePath = false,
+): TagBuilder => {
   const compiled = compileTagTemplate(template)
   const render = fitTag
     ? (params: TagParamsBag) => {
@@ -29,7 +35,18 @@ const builderFromTemplate = (tagId: string, template: string, fitTag = false): T
       }
     : compiled.render
   const meta = { ...compiled, render }
-  const fn = (params: TagParamsBag): string => {
+  const fn = (params: TagParamsBag = {}): string => {
+    if (validatePath) {
+      for (const key of compiled.keys) {
+        const value = params[key]
+        if (value !== undefined) assertPathValue(key, value)
+      }
+    } else {
+      for (const key of compiled.keys) {
+        const value = params[key]
+        if (value !== undefined) assertTagValue(key, value)
+      }
+    }
     const value = render(params)
     if (value === null) {
       throw new Error(tagParamError(tagId, compiled.keys, params))
@@ -57,7 +74,10 @@ export const buildTagDefs = <T extends Record<string, TagTemplate>>(tags: T): Bu
 export const buildPathDefs = <T extends Record<string, PathTemplate>>(paths: T): BuiltPaths<T> => {
   const out = {} as BuiltPaths<T>
   for (const [id, template] of Object.entries(paths)) {
-    const fn = builderFromTemplate(id, template)
+    if (typeof template !== 'string' || !template.startsWith('/') || template.length > 1024) {
+      throw new Error(`Path template "${id}" must start with "/" and fit within 1024 characters`)
+    }
+    const fn = builderFromTemplate(id, template, false, true)
     Object.defineProperty(fn, PATH_SYMBOL, { value: id, enumerable: false })
     out[id as keyof T] = fn as BuiltPaths<T>[keyof T]
   }

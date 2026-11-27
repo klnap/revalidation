@@ -60,7 +60,7 @@ describe('media-dependent revalidation (SQLite integration)', () => {
           ],
         },
       ],
-      [revalidation({ dispatcher })],
+      [revalidation({ source: 'https://cms.example/revalidation', dispatcher })],
     )
   })
 

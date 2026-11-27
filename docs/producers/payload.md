@@ -7,8 +7,20 @@ Requires `payload >=3.94.1 <4`.
 ## Setup
 
 ```ts
-import { http } from '@klnap/revalidation/dispatchers/http';
 import { revalidation } from '@klnap/revalidation/producers/payload';
+import { http } from '@klnap/revalidation/dispatchers/http';
+
+const revalidationPlugin = revalidation({
+  source: 'https://cms.example.com',
+  dispatcher: http({
+    targets: {
+      website: {
+        url: process.env.REVALIDATION_URL!,
+        secret: process.env.REVALIDATION_SECRET!,
+      },
+    },
+  }),
+});
 
 export default buildConfig({
   collections: [
@@ -18,22 +30,13 @@ export default buildConfig({
       fields: [/* ... */],
     },
   ],
-  plugins: [
-    revalidation({
-      dispatcher: http({
-        targets: {
-          website: {
-            url: process.env.REVALIDATION_URL!,
-            secret: process.env.REVALIDATION_SECRET!,
-          },
-        },
-      }),
-    }),
-  ],
+  plugins: [...existingPlugins, revalidationPlugin],
 });
 ```
 
 Collections and globals do nothing until they opt in with `custom.revalidation`.
+The plugin requires a stable absolute-URI `source`; configure the same producer identity on every
+instance that represents this Payload deployment.
 
 ## Opting in
 
@@ -45,7 +48,20 @@ Collections and globals do nothing until they opt in with `custom.revalidation`.
 | `custom.revalidation: { excludeFields }` | Fields ignored by change detection | Same |
 | `custom.revalidation: { enabled: false }` | Opted out | Opted out |
 
-`identifier` accepts one field path or a list of paths. Without it, the document's `slug` is the route identifier.
+`identifier` accepts one field path or a list of paths. By default, the document's `slug` field is
+used as its route identifier. Configure `identifier` when routes use another field. The collection
+slug (`pages`) names the resource; it is not the document's route slug (`about`).
+
+For localized routes, enable Payload localization and mark the relevant fields `localized: true`.
+The producer emits one affected resource per published locale. When an identifier changes, it emits
+the previous and current values for invalidation.
+
+The Payload producer accepts the framework-independent `Dispatcher` contract. Construct the
+built-in HTTP dispatcher separately, or pass an application-owned dispatcher.
+
+Set `REVALIDATION_URL` to the Next.js Route Handler URL. The producer and consumer must use the
+same Standard Webhooks signing secret for that destination. Do not expose the secret through a
+public environment variable.
 
 ## Event contents
 

@@ -1,4 +1,4 @@
-import type { EventSelector } from './event-selector.js'
+import type { EventSelector } from '../../core/event-selector.js'
 
 export type RevalidationTarget = {
   url: string

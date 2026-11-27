@@ -11,7 +11,7 @@ const send = (key) => {
   const body = JSON.stringify({
     specversion: '1.0',
     id: `rev_${key}`,
-    source: 'urn:klnap:revalidation:payload',
+    source: 'https://cms.example/revalidation',
     type: 'com.klnap.revalidation.resource.changed.v1',
     datacontenttype: 'application/json',
     data: {

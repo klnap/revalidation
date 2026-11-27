@@ -27,15 +27,6 @@ const config = {
       },
     },
     {
-      name: 'routing-no-forbidden-npm',
-      severity: 'error',
-      from: { path: '^src/dispatchers/routing/' },
-      to: {
-        dependencyTypes: ['npm'],
-        path: '(^|/)node_modules/(payload|next)(/|$)',
-      },
-    },
-    {
       name: 'http-no-forbidden-npm',
       severity: 'error',
       from: { path: '^src/dispatchers/http/' },
@@ -54,23 +45,23 @@ const config = {
       },
     },
     {
-      name: 'producers-only-core-internals',
+      name: 'producers-only-core',
       severity: 'error',
-      comment: 'producers may import core, sibling producer modules, and sources/payload',
+      comment: 'producers may import only core and their own implementation',
       from: { path: '^src/producers/' },
       to: {
         path: '^src/',
-        pathNot: ['^src/core/', '^src/producers/', '^src/sources/payload/'],
+        pathNot: ['^src/core/', '^src/producers/'],
       },
     },
     {
       name: 'consumers-only-core',
       severity: 'error',
-      comment: 'consumers may import core and documented Payload wire schema (sources/payload)',
+      comment: 'consumers may import framework-independent core and sibling modules',
       from: { path: '^src/consumers/' },
       to: {
         path: '^src/',
-        pathNot: ['^src/core/', '^src/consumers/', '^src/sources/payload/'],
+        pathNot: ['^src/core/', '^src/consumers/'],
       },
     },
     {
@@ -80,21 +71,12 @@ const config = {
       to: { path: '^src/(producers|consumers)/' },
     },
     {
-      name: 'routing-only-core',
-      severity: 'error',
-      from: { path: '^src/dispatchers/routing/' },
-      to: {
-        path: '^src/',
-        pathNot: ['^src/core/', '^src/dispatchers/routing/'],
-      },
-    },
-    {
       name: 'http-dispatcher-boundary',
       severity: 'error',
       from: { path: '^src/dispatchers/http/' },
       to: {
         path: '^src/',
-        pathNot: ['^src/core/', '^src/dispatchers/routing/', '^src/dispatchers/http/'],
+        pathNot: ['^src/core/', '^src/dispatchers/http/'],
       },
     },
     {
@@ -110,15 +92,6 @@ const config = {
       name: 'core-only-core',
       severity: 'error',
       from: { path: '^src/core/' },
-      to: {
-        path: '^src/',
-        pathNot: ['^src/core/'],
-      },
-    },
-    {
-      name: 'sources-payload-only-core',
-      severity: 'error',
-      from: { path: '^src/sources/payload/' },
       to: {
         path: '^src/',
         pathNot: ['^src/core/'],

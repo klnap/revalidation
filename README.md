@@ -1,104 +1,60 @@
 # `@klnap/revalidation`
 
-Declarative, type-safe cache revalidation across independent producers and consumers. Connect
-Payload CMS changes to Next.js cache invalidation through signed CloudEvents, or register your own
-event source.
+Declarative, type-safe cache invalidation across applications, with a framework-independent event
+protocol and native integrations. Producers send authenticated change events; consumers choose how
+those changes affect their caches.
+
+Built-in integrations cover Payload CMS event production, HTTP delivery, and Next.js cache
+invalidation. The event and dispatcher contracts stay framework-independent.
 
 ## Quick example
 
-Configure a Next.js consumer to validate Payload events and map changed pages to typed cache tags
-and paths:
+Configure the Next.js consumer:
 
 ```ts
-// src/revalidation.ts
+// website/src/revalidation.ts
 import 'server-only'
 import { defineRevalidation } from '@klnap/revalidation/consumers/next'
-import { payloadSchema, payloadSource } from '@klnap/revalidation/sources/payload'
 
-export const { tags, paths, POST } = defineRevalidation({
+export const { tags, POST } = defineRevalidation({
   secret: process.env.REVALIDATION_SECRET!,
-  sources: { [payloadSource]: payloadSchema },
-  tags: { page: '[locale]:page:[slug]' },
-  paths: { page: '/[locale]/[slug]' },
-  rules: ({ tags, paths, on }) => [
-    on(
-      {
-        source: payloadSource,
-        affected: { type: 'payload.collection', name: 'pages' },
-      },
-      ({ affected }) => ({
-        tags: affected.flatMap(({ resource }) =>
-          resource.locale && resource.slug
-            ? [tags.page({ locale: resource.locale, slug: resource.slug })]
-            : [],
-        ),
-        paths: affected.flatMap(({ resource }) =>
-          resource.locale && resource.slug
-            ? [paths.page({ locale: resource.locale, slug: resource.slug })]
-            : [],
-        ),
-      }),
-    ),
-  ],
+  tags: {
+    pages: '[locale]:pages',
+    page: '[locale]:page:[slug]',
+  },
+  rules: ({ tags }) => ({
+    'payload.collection.pages': [tags.pages, tags.page],
+  }),
 })
 ```
 
-## Why?
-
-Next.js can invalidate its own cache, but a CMS or another service often owns the write. Connecting
-those systems means agreeing on event data, authenticating delivery, validating input, and mapping
-changed records to the right cache entries.
-
-This package provides that boundary while leaving cache policy in your application. Use native
-Next.js APIs directly when the producer and cache live in one application; use this package when
-events cross a process or service boundary.
-
-## Features
-
-- Share CloudEvents 1.0 between independent producers and consumers.
-- Validate each event source with Standard Schema V1 and preserve inferred data types in rules.
-- Sign HTTP deliveries with Standard Webhooks and configure named, filtered targets.
-- Opt Payload collections and globals into change events, including localized identifiers and media
-  dependencies.
-- Map events to typed Next.js cache tags and paths, or run application-owned cache operations.
-
-## Installation
-
-```bash
-bun add @klnap/revalidation
-```
-
-```bash
-npm install @klnap/revalidation
-```
-
-Next.js and Payload are optional peer dependencies. Install the integration you use in its
-application; you do not need both.
-
-## Usage
-
-### Expose the Next.js Route Handler
-
-Re-export the handler from an App Router Route Handler:
+Expose the handler and tag cached data:
 
 ```ts
-// src/app/api/revalidate/route.ts
+// website/src/app/api/revalidate/route.ts
 export { POST } from '@/revalidation'
 ```
 
-Keep the configuration module server-side. The handler verifies the Standard Webhooks signature,
-validates every event, and only then runs matching rules and cache operations.
+```ts
+import { cacheTag } from 'next/cache'
+import { tags } from '@/revalidation'
 
-### Send events from Payload
+export async function getPage(locale: string, slug: string) {
+  'use cache'
+  cacheTag(tags.page({ locale, slug }))
+  return loadPage(locale, slug)
+}
+```
 
-Add the dispatcher and plugin to your existing Payload configuration. Opt collections or globals in
-with `custom.revalidation`:
+Connect the Payload producer:
 
 ```ts
-import { http } from '@klnap/revalidation/dispatchers/http'
+// cms/src/payload.config.ts
 import { revalidation } from '@klnap/revalidation/producers/payload'
+import { http } from '@klnap/revalidation/dispatchers/http'
 
-const revalidationPlugin = revalidation({
+export const revalidationPlugin = revalidation({
+  source: 'https://cms.example.com',
   dispatcher: http({
     targets: {
       website: {
@@ -108,160 +64,139 @@ const revalidationPlugin = revalidation({
     },
   }),
 })
-
-const pages = {
-  slug: 'pages',
-  custom: { revalidation: true },
-  fields: [{ name: 'title', type: 'text' }],
-}
 ```
 
-Add `revalidationPlugin` under `plugins` and `pages` under `collections` in your existing
-`buildConfig()` options.
+Register the plugin in Payload's `plugins` array and opt collections into change detection with
+`custom.revalidation`. The cache example requires `cacheComponents: true` in `next.config.ts`.
+See [Usage](#usage) for integration guides.
 
-Use the same `whsec_` secret in both applications. `true` uses the collection's `slug` as its route
-identifier; set `identifier` to a field path when your route uses another value.
+## Why?
 
-### Tag cached Next.js data
+Content often changes in one service while cached data lives in another. The producer knows what
+changed; the consumer knows which cache entries depend on it. This package connects them through
+authenticated events without coupling producers to Next.js routes or cache keys.
 
-`cacheTag` with the `'use cache'` directive requires `cacheComponents: true` in `next.config.ts`.
-Then use the helper from the consumer configuration:
+Use native invalidation when writes and cache live in one application. Use this package across a
+service boundary.
 
-```ts
-import { cacheTag } from 'next/cache.js'
-import { tags } from '@/revalidation'
+## Features
 
-export async function getPage(locale: string, slug: string) {
-  'use cache'
-  cacheTag(tags.page({ locale, slug }))
-  return fetch(
-    `https://cms.example/api/pages/${encodeURIComponent(locale)}/${encodeURIComponent(slug)}`,
-  ).then((response) => response.json())
-}
+- Typed cache tag and path templates with declarative resource-to-cache mappings.
+- Previous and current identifiers are both invalidated when a route identifier changes.
+- Payload hooks support localization, publish state, media dependencies, field exclusions, and
+  configured reorder integrations.
+- CloudEvents 1.0, Standard Webhooks authentication, and Standard Schema V1 validation.
+- Named HTTP targets, event filtering, bounded retries, deadlines, and delivery outcomes.
+- Framework-independent event contracts for application-owned producers, dispatchers, and
+  consumers.
+
+## Installation
+
+```sh
+bun add @klnap/revalidation
 ```
 
-### Use another event source
-
-Register a Standard Schema validator for each CloudEvents `source`. Add the schema library you
-import as a direct dependency:
-
-```ts
-import 'server-only'
-import * as v from 'valibot'
-import { defineRevalidation } from '@klnap/revalidation/consumers/next'
-
-const source = 'https://billing.example/events'
-const schema = v.object({ key: v.string() })
-
-export const { POST } = defineRevalidation({
-  secret: process.env.REVALIDATION_SECRET!,
-  sources: { [source]: schema },
-  tags: { pricing: 'pricing' },
-  rules: ({ tags, on }) => [
-    on({ source, type: 'com.example.pricing.changed.v1' }, ({ data }) => ({
-      tags: data.key === 'pricing' ? [tags.pricing()] : [],
-    })),
-  ],
-})
+```sh
+npm install @klnap/revalidation
 ```
 
-See [custom event sources](./docs/sources/custom.md) for the event format and schema behavior.
-For custom cache work, use named `execute` callbacks; see the [Next.js consumer guide](./docs/consumers/next.md).
+Next.js and Payload are optional peers. Install only the framework integration used by each
+application; the framework-independent event and dispatcher contracts require neither peer.
+
+## Usage
+
+### Producer
+
+Use the built-in Payload plugin to emit resource-change events from opted-in collections and
+globals. A producer outside Payload can emit the same event contract or define a custom event type.
+
+- [Payload producer quick start and lifecycle behavior](./docs/producers/payload.md)
+- [Custom producers and event types](./docs/producers/custom.md)
+- [Payload media dependencies](./docs/producers/payload-media-dependencies.md)
+
+### Dispatcher
+
+The built-in HTTP dispatcher signs CloudEvents requests and supports named targets. Implement the
+public dispatcher contract for another transport or delivery policy.
+
+- [HTTP dispatcher setup, limits, and outcomes](./docs/dispatchers/http.md)
+- [Custom dispatcher contract](./docs/dispatchers/custom.md)
+
+### Consumer
+
+The built-in Next.js consumer authenticates and validates events, resolves rules, and invalidates
+tags or paths. Other frameworks can compose the public protocol primitives, but the package does
+not provide a generic consumer factory.
+
+- [Next.js consumer setup and configuration](./docs/consumers/next.md)
+- [Custom consumer responsibilities and exported primitives](./docs/consumers/custom.md)
+
+### Custom cache operations
+
+The Next.js consumer can run application-owned operations before dependent invalidation. See
+[custom execution](./docs/extending.md#custom-execution-commerce-indexing).
 
 ## Configuration
 
-### Next.js consumer
+### Producer
 
-`defineRevalidation()` requires a secret, source schemas, and rules. Cache templates are optional.
+Configure a stable absolute-URI `source` and a `dispatcher`. Collections and globals opt in with
+`custom.revalidation`; collection options include identifiers, hook selection, and ordering.
+See the [Payload producer reference](./docs/producers/payload.md).
 
-| Option | Default | Behavior |
-| --- | --- | --- |
-| `secret` | Required | Standard Webhooks secret used to verify requests. |
-| `sources` | Required | Map of CloudEvents source URIs to Standard Schema V1 validators. |
-| `rules` | Required | Match events with `on(selector, resolver)` or resource mappings. All matching rules run. |
-| `tags`, `paths` | `{}` | Named templates create helpers; each `[parameter]` becomes a required string argument. |
-| `mode` | `expire` | `expire` maps to `{ expire: 0 }`; `stale` maps to Next.js `"max"`. |
-| `maxBodyBytes` | 256 KiB | Request limit; hard ceiling 16 MiB. |
-| `bodyTimeoutMs` | 15 seconds | Body-read deadline; hard ceiling 60 seconds. |
-| `maxEvents` | 100 | Events accepted per request; hard ceiling 1,000. |
-| `maxOperations` | 1,000 | Custom operations per request; hard ceiling 10,000. |
-| `executionTimeoutMs` | 15 seconds | Custom executor deadline; hard ceiling 60 seconds. |
+### Dispatcher
 
-Rule and individual tag results can override `mode`. They accept `expire`, `stale`, or a native
-Next.js profile (`string` or `{ expire?: number }`). Path results accept `type: 'page' | 'layout'`;
-dynamic paths default to `page`. Tags are limited to 256 characters and paths to 1,024 characters.
-Template parameters are not escaped; validate values before using untrusted input in cache keys.
+Configure HTTP targets by stable name with a destination `url` and signing `secret`. Target
+filters, retries, timeouts, deadlines, and payload limits are described in the
+[HTTP dispatcher reference](./docs/dispatchers/http.md).
 
-Custom `execute` callbacks run synchronously within the request, in rule order. They receive an
-`AbortSignal`, but cancellation is cooperative. This is not a background queue.
+### Consumer
 
-### HTTP dispatcher
-
-`http()` requires at least one named target. Each target has a URL and a `whsec_` secret; an optional
-`filter` selects matching CloudEvents. Targets must use HTTPS, except loopback HTTP or an explicit
-`allowInsecure: true`.
-
-| Option | Default | Hard ceiling |
-| --- | --- | --- |
-| `timeoutMs` | 15 seconds per attempt | 60 seconds |
-| `deadlineMs` | 5 seconds per dispatch | 300 seconds |
-| `retries` | 2 additional attempts | 10 |
-| `retryDelayMs` | 200 ms | 60 seconds |
-| `maxEventItems` | 100 per request | 1,000 |
-| `maxBodyBytes` | 256 KiB per request | 16 MiB |
-| `allowInsecure` | `false` | `true` permits non-loopback HTTP; avoid it in production. |
-
-The dispatcher retries network errors, timeouts, `429`, and `5xx` responses within the deadline.
-Other `4xx` responses and redirects are terminal. It has no persistent queue.
-
-### Payload producer
-
-The plugin requires a `dispatcher`. Its `source` defaults to
-`urn:klnap:revalidation:payload`; `enabled` defaults to `true`. If `media` is omitted, the plugin
-selects the only upload collection or an upload collection with the slug `media`.
-
-Collections and globals are disabled until `custom.revalidation` is set:
-
-| Setting | Default and behavior |
-| --- | --- |
-| `true` | Collection: `afterChange` and `afterDelete`; global: `afterChange`. |
-| `enabled` | `true` when an options object is used; `false` opts out. |
-| `hooks` | Both collection hooks; globals support `afterChange` only. |
-| `identifier` | Collection `slug`; accepts one field path or independent field paths. |
-| `excludeFields` | No extra exclusions; ignores selected fields during change detection. |
-| `orderField` | Payload `_order` for orderable collections; configurable for other schemas. |
-
-The plugin also accepts top-level `excludeFields`, per-collection and per-global exclusions, and a
-custom media collection. See the [Payload producer guide](./docs/producers/payload.md) for precedence
-and localization behavior.
+`defineRevalidation()` accepts the signing `secret`, cache `tags` and `paths`, declarative `rules`,
+optional event `schemas`, optional `allowedSources`, native cache `profile`s, and custom `execute`
+operations.
+See the [Next.js consumer reference](./docs/consumers/next.md).
 
 ## Compatibility
 
 - Node.js `^22.23.5 || ^24.22.3 || >=26.13.1`.
-- TypeScript 5.0 or later; public types use `const` type parameters.
+- TypeScript 5.0 or later for the exported type surface.
 - Next.js `>=16.4.5 <17` for the Next.js consumer.
 - Payload `>=3.94.1 <4` for the Payload producer.
 
-Next.js and Payload are optional peers, so other producers can use the event and HTTP contracts
-without installing either framework. The consumer accepts signed CloudEvents structured JSON and
-JSON batches.
-
-Delivery is best-effort: bounded retries can duplicate events, and process exit or prolonged outages
-can lose them. Payload hooks run before the database transaction commits; a later rollback cannot
-retract an event already delivered.
+Delivery is best-effort: bounded retries can duplicate events, while outages or process termination
+can lose them. Ordinary Payload lifecycle hooks run before transaction commit; a later rollback
+cannot retract a delivered event. Review the [reliability](./docs/reliability.md) and
+[security](./docs/security.md) limitations before deployment.
 
 ## Documentation
 
+### Producers
+
+- [Payload CMS](./docs/producers/payload.md)
+- [Custom producers and event types](./docs/producers/custom.md)
+- [Payload media dependencies](./docs/producers/payload-media-dependencies.md)
+
+### Dispatchers
+
+- [HTTP](./docs/dispatchers/http.md)
+- [Custom dispatcher contract](./docs/dispatchers/custom.md)
+
+### Consumers
+
+- [Next.js](./docs/consumers/next.md)
+- [Custom consumers](./docs/consumers/custom.md)
+- [Custom cache operations](./docs/extending.md)
+
+### Concepts and operations
+
 - [Architecture](./docs/concepts/architecture.md)
-- [Payload producer](./docs/producers/payload.md)
-- [HTTP dispatcher](./docs/dispatchers/http.md)
-- [Next.js consumer](./docs/consumers/next.md)
-- [Custom event sources](./docs/sources/custom.md)
+- [Event contract](./docs/concepts/event-contract.md)
+- [Cache templates and rule semantics](./docs/concepts/cache-tags.md)
 - [Reliability](./docs/reliability.md)
 - [Security](./docs/security.md)
 - [Troubleshooting](./docs/troubleshooting.md)
-- [Extension points](./docs/extending.md)
-- [0.3.0 to 0.4.0 migration](./docs/migration/0.3.0-to-0.4.0.md)
+- [Migration from 0.4.0 to 0.5.0](./docs/migration/0.4.0-to-0.5.0.md)
 
 ## License
 

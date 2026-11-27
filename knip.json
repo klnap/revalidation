@@ -1,7 +1,6 @@
 {
   "entry": [
     "src/core/index.ts",
-    "src/sources/payload/index.ts",
     "src/producers/payload/index.ts",
     "src/consumers/next/index.ts",
     "src/dispatchers/index.ts",

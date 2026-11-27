@@ -3,6 +3,7 @@ import { postRevalidationChanges } from './dispatch.ts'
 import type { RevalidationChange } from './types.ts'
 
 const logger = { error: () => undefined }
+const source = 'https://cms.example/revalidation'
 
 describe('postRevalidationChanges', () => {
   it('sends grouped root and affected resources in one CloudEvent', async () => {
@@ -21,7 +22,7 @@ describe('postRevalidationChanges', () => {
       doc: { id: index, slug: `page-${index}` },
     }))
 
-    await postRevalidationChanges({ changes, logger, dispatcher: dispatcher as never })
+    await postRevalidationChanges({ changes, source, logger, dispatcher: dispatcher as never })
 
     expect(sent).toHaveLength(1)
     expect(sent[0]!.events).toHaveLength(1)
@@ -34,6 +35,7 @@ describe('postRevalidationChanges', () => {
     const sent: unknown[] = []
     await postRevalidationChanges({
       changes: [],
+      source,
       logger,
       dispatcher: { dispatch: async (input: unknown) => sent.push(input) } as never,
     })

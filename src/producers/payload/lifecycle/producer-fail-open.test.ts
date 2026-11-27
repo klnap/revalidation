@@ -2,6 +2,8 @@ import { describe, expect, it, mock } from 'bun:test'
 
 import { postRevalidationChanges } from './dispatch.ts'
 
+const source = 'https://cms.example/revalidation'
+
 describe('producer fail-open dispatch', () => {
   it('does not throw when dispatcher returns failed', async () => {
     const errorLog = mock(() => {})
@@ -17,6 +19,7 @@ describe('producer fail-open dispatch', () => {
             doc: { id: '1', title: 'Hi' },
           },
         ],
+        source,
         logger: { error: errorLog },
         dispatcher: {
           dispatch: async () => ({

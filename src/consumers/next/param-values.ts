@@ -1,4 +1,5 @@
-import { CacheSchemaError } from './errors.js'
+import { CacheSchemaError } from '../../core/errors.js'
+import { urlSegmentProblem } from '../../core/url-segment.js'
 
 /** Longest value a slug-derived parameter may carry. */
 export const MAX_PARAM_LENGTH = 256
@@ -11,9 +12,7 @@ export const tagValueProblem = (value: string): string | undefined =>
 export const pathValueProblem = (value: string): string | undefined => {
   const tooLong = tagValueProblem(value)
   if (tooLong) return tooLong
-  if (value === '.' || value === '..') return 'a dot segment'
-  if (/[/\\\p{Cc}]/u.test(value)) return 'a path separator or control character'
-  return undefined
+  return urlSegmentProblem(value)
 }
 
 export const assertTagValue = (key: string, value: string): void => {
