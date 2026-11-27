@@ -34,7 +34,18 @@ export const validateTarget = (
   if (url.username || url.password) {
     throw new TypeError(`HTTP target "${name}" URL must not contain credentials`)
   }
-  if (!target.secret.startsWith('whsec_') || target.secret.length <= 6) {
-    throw new TypeError(`HTTP target "${name}" must use a Standard Webhooks secret`)
+  if (target.secret === undefined || target.secret === '') {
+    throw new TypeError(
+      `HTTP target "${name}" is missing its signing secret; set a Standard Webhooks secret ("whsec_" followed by base64)`,
+    )
+  }
+  if (
+    typeof target.secret !== 'string' ||
+    !target.secret.startsWith('whsec_') ||
+    target.secret.length <= 6
+  ) {
+    throw new TypeError(
+      `HTTP target "${name}" has a malformed signing secret; expected "whsec_" followed by base64`,
+    )
   }
 }

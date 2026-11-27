@@ -169,6 +169,19 @@ describe('http dispatcher', () => {
     expect(result).toMatchObject({ status: 'accepted', results: [{ attempts: 2 }] })
   })
 
+  it('names the target and distinguishes missing from malformed signing secrets', () => {
+    const url = 'https://example.test/revalidate'
+    expect(() =>
+      http({ targets: { website: { url, secret: undefined as unknown as string } } }),
+    ).toThrow('HTTP target "website" is missing its signing secret')
+    expect(() => http({ targets: { website: { url, secret: 'plain-token' } } })).toThrow(
+      'HTTP target "website" has a malformed signing secret',
+    )
+    expect(() => http({ targets: { website: { url, secret: 'whsec_!!!not-base64' } } })).toThrow(
+      'HTTP target "website" has a malformed signing secret',
+    )
+  })
+
   it('validates HTTPS targets and bounded event chunk sizes at configuration time', () => {
     expect(() => http({ targets: {} })).toThrow()
     expect(() => http({ targets: { website: { url: 'ftp://example.test', secret } } })).toThrow()
