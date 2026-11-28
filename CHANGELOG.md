@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3
+
+### Patch Changes
+
+- 11633cd: Release workflow only: verify each published release after publication, matching npm-package-template. No runtime change.
+- 9226da0: Release workflow only: wait for npm to serve provenance attestations before verifying a release. No runtime change.
+
 ## 0.5.2
 
 ### Patch Changes

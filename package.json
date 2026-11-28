@@ -1,6 +1,6 @@
 {
   "name": "@klnap/revalidation",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Declarative, type-safe cache invalidation across applications with a framework-independent event protocol and native Payload CMS, HTTP, and Next.js integrations.",
   "keywords": [
     "revalidation",
