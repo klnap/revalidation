@@ -7,13 +7,11 @@ import {
   CacheSchemaError,
   CacheSourceError,
   CloudEventParseError,
-  matchingAffectedResources,
   matchesEventSelector,
   parseCloudEvents,
   validateStandardSchema,
   type CloudEvent,
   type EventSelector,
-  type Logger,
   type Operation,
   type RevalidationResource,
 } from '../../core/index.js'
@@ -36,7 +34,6 @@ import type {
   ExecutorMap,
   RuleHelpers,
   SchemaMap,
-  SchemaOutput,
   EventOutput,
 } from './consumer-types.js'
 // Node ESM resolves this Next.js entry through its explicit `.js` export.

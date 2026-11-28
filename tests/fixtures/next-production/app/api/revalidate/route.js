@@ -7,7 +7,7 @@ const { POST } = defineRevalidation({
   maxBodyBytes: 1024,
   tags: { item: 'test:[slug]' },
   paths: { report: '/reports/[slug]' },
-  rules: ({ tags, paths, on }) => [
+  rules: ({ tags, on }) => [
     on({ type: resourceChangedEventType }, ({ affected }) => ({
       tags: affected.flatMap(({ resource }) => {
         if (!['target', 'other', 'stale', 'partial'].includes(resource.slug)) return []

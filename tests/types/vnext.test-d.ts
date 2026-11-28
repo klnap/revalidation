@@ -11,7 +11,7 @@ const consumer = defineRevalidation({
   tags: { article: '[locale]:article:[slug]' },
   paths: { article: '/[locale]/articles/[slug]' },
   profile: 'max',
-  rules: ({ tags, paths, on }) => [
+  rules: ({ tags, on }) => [
     on(
       {
         type: resourceChangedEventType,

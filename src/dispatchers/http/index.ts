@@ -278,7 +278,14 @@ export const http = (config: HttpDispatcherConfig): HttpDispatcher => {
   if (!Object.keys(config.targets).length) throw new Error('http dispatcher requires targets')
   for (const [name, target] of Object.entries(config.targets)) {
     validateTarget(name, target, config.allowInsecure)
-    new Webhook(target.secret)
+    try {
+      new Webhook(target.secret)
+    } catch (cause) {
+      throw new TypeError(
+        `HTTP target "${name}" has a malformed signing secret; expected "whsec_" followed by base64`,
+        { cause },
+      )
+    }
   }
   const maxEventItems = assertLimit(
     'maxEventItems',
