@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6
+
+### Patch Changes
+
+- 7319f99: Release workflow only: enforce a ten-minute registry deadline and verify GitHub Release immutability.
+
 ## 0.5.5
 
 ### Patch Changes
