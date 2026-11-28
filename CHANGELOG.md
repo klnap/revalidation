@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+### Patch Changes
+
+- 5ca5026: Release workflow only: retry the pack artifact download once after a short wait, matching npm-package-template. No runtime change.
+
 ## 0.5.1
 
 ### Patch Changes
