@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
   "files": {
-    "includes": ["**", "!**/*.md", "!.github"]
+    "includes": ["**", "!**/*.md", "!.github", "!**/scripts/await-registry.*"]
   },
   "vcs": {
     "enabled": true,
