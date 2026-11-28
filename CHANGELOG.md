@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Patch Changes
+
+- cc59fe4: Report missing and malformed HTTP target signing secrets with the target name and a clear remediation, without echoing the secret value.
+
 ## 0.5.0
 
 ### Minor Changes
