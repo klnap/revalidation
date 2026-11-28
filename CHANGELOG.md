@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.7
+
+### Patch Changes
+
+- 949fae9: Release workflow only: accept npm 12 single-value output when waiting for the published version. No runtime change.
+
 ## 0.5.6
 
 ### Patch Changes
