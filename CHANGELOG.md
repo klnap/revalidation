@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4
+
+### Patch Changes
+
+- e3d1be0: Release workflow only: allow up to ten minutes for npm to serve provenance attestations before verifying a release. No runtime change.
+
 ## 0.5.3
 
 ### Patch Changes
